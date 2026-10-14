@@ -1,0 +1,37 @@
+[package]
+name = "bkxpro-codec-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bkxpro-codec = { path = ".." }
+bytes = "1.10"
+
+[[bin]]
+name = "record_parser"
+path = "fuzz_targets/record_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "block_parser"
+path = "fuzz_targets/block_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "footer_parser"
+path = "fuzz_targets/footer_parser.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
