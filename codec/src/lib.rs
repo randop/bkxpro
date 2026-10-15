@@ -4,6 +4,11 @@
 //! borrows the segment through `bytes::Bytes`; `RecordRef::payload_chunks` yields
 //! cheap `Bytes::slice` views and does not allocate a per-record payload buffer,
 //! including when a payload crosses block boundaries.
+//!
+//! Platform: Linux only. Uses Linux-specific alignment and O_DIRECT assumptions.
+
+#[cfg(not(target_os = "linux"))]
+compile_error!("bkxpro-codec supports Linux only; develop and test in a Linux VM/devcontainer");
 
 use bytes::Bytes;
 use core::{fmt, marker::PhantomData};
@@ -91,14 +96,44 @@ struct LedgerSummaryWire {
 /// Fixed 32-byte trailer. Field order avoids implicit C padding.
 #[repr(C)]
 #[derive(Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
-struct TrailerWire {
-    magic: [u8; 8],
-    footer_start: u64,
-    footer_len: u32,
-    footer_crc32c: u32,
-    version: u16,
-    trailer_len: u16,
-    trailer_crc32c: u32,
+pub struct TrailerWire {
+    pub magic: [u8; 8],
+    pub footer_start: u64,
+    pub footer_len: u32,
+    pub footer_crc32c: u32,
+    pub version: u16,
+    pub trailer_len: u16,
+    pub trailer_crc32c: u32,
+}
+
+impl TrailerWire {
+    /// Parse a trailer from the last 32 bytes of a segment.
+    pub fn parse(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() < 32 {
+            return Err(CodecError::Truncated("trailer"));
+        }
+        let wire =
+            Self::read_from_bytes(&bytes[..32]).map_err(|_| CodecError::Truncated("trailer"))?;
+        if &wire.magic != TRAILER_MAGIC {
+            return Err(CodecError::BadMagic("trailer"));
+        }
+        let version = u16::from_le(wire.version);
+        if version != FORMAT_VERSION {
+            return Err(CodecError::UnsupportedVersion(version));
+        }
+        if u16::from_le(wire.trailer_len) as usize != 32 {
+            return Err(CodecError::InvalidField("trailer length"));
+        }
+        let stored_crc = u32::from_le(wire.trailer_crc32c);
+        // CRC with the CRC field zeroed
+        let mut bytes_with_zero_crc = [0u8; 32];
+        bytes_with_zero_crc.copy_from_slice(&bytes[..32]);
+        bytes_with_zero_crc[28..32].fill(0);
+        if crc32c::crc32c(&bytes_with_zero_crc) != stored_crc {
+            return Err(CodecError::BadCrc("trailer"));
+        }
+        Ok(wire)
+    }
 }
 
 // Fail the build if an ABI/layout change alters any wire size.

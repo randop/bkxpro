@@ -5,8 +5,10 @@ bkxpro - BookKeeper process, a data plane microservice.
 ## Crates
 
 - [`codec/`](codec/README.md): fixed-format segment codec, RAN-126.
-- [`segment-writer/`](segment-writer/README.md): aligned segment writer and group-commit state machine, RAN-127.
-- [`linux-io/`](linux-io/README.md): Linux-only io_uring adapter, registered resource management, and host preflight, RAN-134.
+- [`segmenter/`](segmenter/README.md): aligned segment writer and group-commit state machine, RAN-127.
+- [`io/`](io/README.md): Linux-only io_uring adapter, cgroup accounting, registered resource management, and host preflight, RAN-134.
+- [`reader/`](reader/README.md): foyer hybrid reader cache and RSS-under-load benchmarks, RAN-131.
+- [`uploader/`](uploader/README.md): streaming object-store uploader with manifest-gated segment deletion, RAN-130.
 
 ## Linux development and host preflight
 
@@ -15,7 +17,7 @@ The complete storage workspace is Linux-only. Non-Linux builds fail at compile t
 Run the standalone host preflight on the actual XFS/ext4 staging volume before starting a service:
 
 ```sh
-cargo run -p bkxpro-linux-io --bin bkxpro-preflight -- \
+cargo run -p bkxpro-io --bin bkxpro-preflight -- \
   --data-dir /var/lib/bkxpro \
   --memory-budget-mib 2048 \
   --registered-buffer-mib 256 \
@@ -26,4 +28,4 @@ The preflight requires Linux 6.1+, permitted io_uring, a finite cgroup v2 `memor
 
 See [the RAN-134 runtime decision](docs/rfc/0001-linux-io-runtime.md) for the backend decision, failure policy, and fio baseline procedure.
 
-The segment-writer crate is structured around the `SegmentIo` boundary required from RAN-134. It does not substitute a portable or buffered I/O backend when that adapter is unavailable.
+The segmenter crate is structured around the `SegmentIo` boundary required from RAN-134. It does not substitute a portable or buffered I/O backend when that adapter is unavailable.

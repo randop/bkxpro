@@ -1,0 +1,28 @@
+[package]
+name = "bkxpro-reader"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Foyer hybrid reader cache and read path for bkxpro (RAN-131)"
+
+[dependencies]
+bkxpro-codec = { path = "../codec" }
+bkxpro-indexer = { path = "../indexer" }
+bkxpro-segmenter = { path = "../segmenter" }
+async-trait = "0.1"
+bytes = "1.10"
+foyer = { version = "0.22", features = ["serde"] }
+foyer-storage = "0.22"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+tracing = "0.1"
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[dev-dependencies]
+bkxpro-io = { path = "../io" }
+libc = "0.2"
+tempfile = "3.8"
+
+[[bench]]
+name = "rss_under_load"
+harness = false

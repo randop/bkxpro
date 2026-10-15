@@ -1,0 +1,30 @@
+[package]
+name = "bkxpro-uploader"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Streaming S3 uploader with manifest-gated segment deletion for bkxpro (RAN-130)"
+
+[dependencies]
+bkxpro-codec = { path = "../codec" }
+bkxpro-indexer = { path = "../indexer" }
+bkxpro-reader = { path = "../reader" }
+bkxpro-segmenter = { path = "../segmenter" }
+async-trait = "0.1"
+bytes = "1.10"
+crc32c = "0.6"
+object_store = { version = "0.14", features = ["aws"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tokio = { version = "1.40", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+tracing = "0.1"
+libc = "0.2"
+
+[dev-dependencies]
+bkxpro-io = { path = "../io" }
+tempfile = "3.8"
+
+[[bench]]
+name = "upload_page_cache"
+harness = false
