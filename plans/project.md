@@ -255,7 +255,7 @@ Develop the battle-testing program for the staging tier and its S3 interactions.
 
 ## RAN-131 — foyer read cache integration and RSS-under-load benchmarks
 
-Status: Todo
+Status: Done
 Priority: No priority
 
 Integrate the foyer hybrid cache for the read path and benchmark memory under load.
@@ -292,7 +292,7 @@ The cap is enforced and measured against cgroup v2 `memory.current` (RSS, page c
 
 ## RAN-130 — Uploader with manifest-gated segment deletion
 
-Status: Todo
+Status: Done
 Priority: No priority
 
 Build the uploader that streams sealed segments to S3 and gates local deletion on the manifest commit.
@@ -316,13 +316,34 @@ Build the uploader that streams sealed segments to S3 and gates local deletion o
 - Uploader backpressure feeds the in-flight bytes semaphore.
 - Page cache growth attributable to uploads stays within budget (checked via cgroup v2 `memory.stat`).
 
+### Implementation notes
+
+- Crate `bkxpro-uploader` (`uploader/`), see `uploader/README.md`. The production
+  durability order is: validate -> mark `Uploading` (+ `s3_key`) -> PUT -> CAS append to
+  `manifest/log.jsonl` -> mark `Uploaded` -> unlink + directory fsync -> mark `Deleted`.
+- Deletion tombstones the `segments` row and keeps the `entries` rows, because the
+  ranged-GET fallback resolves payload locations through the index.
+  `Index::delete_segment_entries` stays as the explicit retention purge.
+- `EntryLocation.offset` is the payload offset (record header excluded). Both index
+  rebuild paths now translate the codec's record-header offsets accordingly; the
+  read path and the ranged-GET reader slice payloads at `offset`.
+- The I/O worker thread lowers its own priority with `ioprio_set` (best-effort level 7
+  by default, `Unchanged`/`Idle` selectable); cgroup v2 `io.weight` remains the
+  alternative where the capability is unavailable.
+- Ranged reads (local and remote) serve payloads that fit inside one 4 KiB block, the
+  granularity of the read cache's block cache. Payloads that span blocks need
+  reassembly in the read path and are not covered here.
+- Verified against real S3 (`uploader/tests/s3.rs`, env-gated): a ~5.5 MiB sealed
+  segment uploads as a real two-part multipart PUT, the stored object is
+  byte-identical, and sampled entries read back through ranged GETs.
+
 **Assisted By:** Anthropic Claude Sonnet 5.5
 
 ---
 
 ## RAN-129 — fjall index and rebuild-from-segments
 
-Status: Todo
+Status: Done
 Priority: No priority
 
 Build the fjall-backed index and the rebuild-from-segments path. The index is derived data; segments are the source of truth.

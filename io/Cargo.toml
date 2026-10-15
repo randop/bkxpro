@@ -2,10 +2,17 @@
 name = "bkxpro-io"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "Linux io_uring storage adapter, cgroup accounting, and host preflight for bkxpro (RAN-134)"
 
 [dependencies]
-libc = "0.2"
+bkxpro-segmenter = { path = "../segmenter" }
 io-uring = { version = "0.7.15", default-features = false }
+libc = "0.2.190"
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[[bin]]
+name = "bkxpro-preflight"
+path = "src/bin/bkxpro-preflight.rs"
