@@ -1,0 +1,15 @@
+[package]
+name = "bkxpro-linux-io"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Linux io_uring storage adapter and host preflight for bkxpro (RAN-134)"
+
+[dependencies]
+bkxpro-segment-writer = { path = "../segment-writer" }
+io-uring = { version = "0.7.15", default-features = false }
+libc = "0.2.190"
+
+[[bin]]
+name = "bkxpro-preflight"
+path = "src/bin/bkxpro-preflight.rs"

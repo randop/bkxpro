@@ -1,0 +1,11 @@
+[package]
+name = "bkxpro-io"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2"
+io-uring = { version = "0.7.15", default-features = false }
+
+[dev-dependencies]
+tempfile = "3.8"
