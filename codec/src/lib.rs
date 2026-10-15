@@ -204,6 +204,16 @@ pub struct BlockInfo {
     pub used_len: usize,
 }
 
+/// Physical block extent occupied by a record in an in-progress aligned segment.
+/// Offsets are absolute byte offsets from the beginning of the segment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordSpan {
+    /// Block containing the record header.
+    pub first_block_offset: usize,
+    /// Block containing the final payload byte. This block may still be open.
+    pub last_block_offset: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryStop {
     EndOfFile,
@@ -865,9 +875,7 @@ impl SegmentView {
 
     fn span_for_stream(&self, at: usize) -> Option<(usize, &BlockSpan)> {
         // First span whose end is past `at`; zero-length spans are skipped naturally.
-        let i = self
-            .spans
-            .partition_point(|s| s.stream_start + s.len <= at);
+        let i = self.spans.partition_point(|s| s.stream_start + s.len <= at);
         let s = self.spans.get(i)?;
         (at >= s.stream_start).then_some((i, s))
     }
@@ -1359,6 +1367,86 @@ impl<'a> AlignedSegmentEncoder<'a> {
         self.cursor
     }
 
+    /// Physical data-region length including the reserved space for an open block.
+    /// This is useful for enforcing a segment target before appending another entry.
+    pub fn estimated_data_region_len(&self) -> usize {
+        self.cursor.saturating_sub(HEADER_SIZE)
+            + if self.block_open || self.used_len != 0 || self.record_count != 0 {
+                BLOCK_SIZE
+            } else {
+                0
+            }
+    }
+
+    /// Conservative physical data-region length after adding a record with this payload size.
+    /// It mirrors the codec's record placement rules without mutating the encoder.
+    pub fn estimated_data_region_len_after_record(
+        &self,
+        payload_len: usize,
+    ) -> Result<usize, CodecError> {
+        let record_size = RECORD_HEADER_SIZE
+            .checked_add(payload_len)
+            .ok_or(CodecError::IntegerOverflow)?;
+        let spans_blocks = record_size > BLOCK_DATA_SIZE;
+        let flush_first =
+            spans_blocks || BLOCK_DATA_SIZE.saturating_sub(self.used_len) < record_size;
+        let has_pending = self.used_len != 0 || self.record_count != 0;
+        let extra_block = if flush_first && has_pending {
+            BLOCK_SIZE
+        } else {
+            0
+        };
+        let start_cursor = self
+            .cursor
+            .checked_add(extra_block)
+            .ok_or(CodecError::IntegerOverflow)?;
+        let start_used = if flush_first { 0 } else { self.used_len };
+        let blocks = start_used
+            .checked_add(record_size)
+            .and_then(|n| n.checked_add(BLOCK_DATA_SIZE - 1))
+            .ok_or(CodecError::IntegerOverflow)?
+            / BLOCK_DATA_SIZE;
+        let end = start_cursor
+            .checked_add(
+                blocks
+                    .checked_mul(BLOCK_SIZE)
+                    .ok_or(CodecError::IntegerOverflow)?,
+            )
+            .ok_or(CodecError::IntegerOverflow)?;
+        Ok(end.saturating_sub(HEADER_SIZE))
+    }
+
+    /// Borrow the 4 KiB segment header in the encoder's caller-owned buffer.
+    pub fn header_bytes(&self) -> &[u8] {
+        &self.output[..HEADER_SIZE]
+    }
+
+    /// Borrow one complete, finalized 4 KiB data block by its absolute aligned offset.
+    /// The block must be before `committed_prefix_len()`; open blocks are rejected.
+    pub fn data_block_bytes(&self, offset: usize) -> Result<&[u8], CodecError> {
+        if offset < HEADER_SIZE || offset % BLOCK_SIZE != 0 {
+            return Err(CodecError::InvalidField("data block offset/alignment"));
+        }
+        let end = offset
+            .checked_add(BLOCK_SIZE)
+            .ok_or(CodecError::IntegerOverflow)?;
+        if end > self.cursor {
+            return Err(CodecError::InvalidField("data block is not finalized"));
+        }
+        Ok(&self.output[offset..end])
+    }
+
+    /// Finalize the currently open data block, if any, and return its byte offset.
+    /// No I/O is performed; RAN-127 submits this block through its I/O backend.
+    pub fn flush_pending_data_block(&mut self) -> Result<Option<usize>, CodecError> {
+        if self.used_len == 0 && self.record_count == 0 {
+            return Ok(None);
+        }
+        let offset = self.cursor;
+        self.flush_block()?;
+        Ok(Some(offset))
+    }
+
     fn ensure_block_open(&mut self) -> Result<(), CodecError> {
         if self.block_open {
             return Ok(());
@@ -1419,6 +1507,19 @@ impl<'a> AlignedSegmentEncoder<'a> {
         flags: u8,
         payload: &Bytes,
     ) -> Result<(), CodecError> {
+        self.push_record_with_span(ledger, entry, flags, payload)
+            .map(|_| ())
+    }
+
+    /// Append a record and report the physical blocks containing it. The record header
+    /// is never split across blocks; a multi-block payload may continue through later blocks.
+    pub fn push_record_with_span(
+        &mut self,
+        ledger: u64,
+        entry: u64,
+        flags: u8,
+        payload: &Bytes,
+    ) -> Result<RecordSpan, CodecError> {
         let len = u32::try_from(payload.len()).map_err(|_| CodecError::IntegerOverflow)?;
         let record_size = RECORD_HEADER_SIZE
             .checked_add(payload.len())
@@ -1481,13 +1582,23 @@ impl<'a> AlignedSegmentEncoder<'a> {
             self.used_len += count;
             copied += count;
         }
-        Ok(())
+        Ok(RecordSpan {
+            first_block_offset: (record_offset / BLOCK_SIZE) * BLOCK_SIZE,
+            last_block_offset: self.cursor,
+        })
     }
 
     /// Finalize the footer and trailer in-place. The returned file length is always
     /// a multiple of 4 KiB; zero padding is placed between footer and trailer so the
     /// complete tail can be issued with O_DIRECT without a partial final write.
-    pub fn seal(mut self) -> Result<usize, CodecError> {
+    pub fn seal(self) -> Result<usize, CodecError> {
+        self.seal_and_return_buffer().map(|(_, len)| len)
+    }
+
+    /// Seal in-place and return the caller-owned buffer as well as the final file length.
+    /// Returning the buffer lets the segment writer submit the footer/trailer with O_DIRECT
+    /// after all data blocks have been durably committed.
+    pub fn seal_and_return_buffer(mut self) -> Result<(&'a mut [u8], usize), CodecError> {
         self.flush_block()?;
         self.index.sort_by_key(|item| (item.ledger, item.entry));
         for pair in self.index.windows(2) {
@@ -1608,7 +1719,7 @@ impl<'a> AlignedSegmentEncoder<'a> {
         let trailer_crc = crc32c_with_zeroed_u32(&self.output[trailer_start..tail_end], 28);
         self.output[trailer_start + 28..tail_end].copy_from_slice(&trailer_crc.to_le_bytes());
         let _ = self.header;
-        Ok(tail_end)
+        Ok((self.output, tail_end))
     }
 }
 
