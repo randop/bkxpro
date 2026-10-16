@@ -8,9 +8,9 @@ export MINIO_ROOT_USER='localadmin'
 export MINIO_ROOT_PASSWORD='localdevsecret123'
 
 if [ ! -d "$HOME/minio-data" ]; then
-  mkdir -v $HOME/minio-data
+    mkdir -v $HOME/minio-data
 fi
 
 minio server "$HOME/minio-data" \
-  --address 127.0.0.1:9000 \
-  --console-address 127.0.0.1:9001
+    --address 127.0.0.1:9000 \
+    --console-address 0.0.0.0:9001
