@@ -33,13 +33,13 @@ use bkxpro_codec::{
     parse_segment_header, AlignedSegmentEncoder, SegmentHeader, SegmentView, TrailerWire,
     BLOCK_DATA_SIZE, BLOCK_SIZE, HEADER_SIZE, RECORD_HEADER_SIZE, TRAILER_SIZE,
 };
-use bkxpro_segment_writer::AlignedBuffer;
+use bkxpro_segmenter::AlignedBuffer;
 use serde::Serialize;
 
 use crate::{lifecycle::Session, rng::DetRng};
 
 /// Fuzzer knobs. A run is a pure function of `(seed, iterations, entries,
-/// payload_bytes, max_mutations)`, so a violating seed replays exactly.
+/// payload_bytes)`, so a violating seed replays exactly.
 #[derive(Debug, Clone)]
 pub struct FuzzConfig {
     pub seed: u64,
@@ -255,7 +255,6 @@ fn mutate_iteration(
     seed: u64,
     iteration: u64,
     source: &Source,
-    max_mutations: usize,
 ) -> (Vec<u8>, Option<TailFault>, bool) {
     let mut rng = DetRng::new(seed).derive_from(&[b"fuzz-iteration", &iteration.to_le_bytes()]);
     let sealed_base = rng.chance(50);
@@ -276,7 +275,7 @@ fn mutate_iteration(
         apply_tail(&mut bytes, fault);
         return (bytes, Some(fault), sealed_base);
     }
-    let layers = rng.range_inclusive(1, max_mutations.max(1) as u64) as usize;
+    let layers = rng.range_inclusive(1, 3) as usize;
     (mutate(&mut rng, base, layers), None, sealed_base)
 }
 
@@ -447,7 +446,7 @@ pub fn run_fuzz(config: &FuzzConfig) -> FuzzReport {
     };
     for iteration in 0..config.iterations {
         let before = report.recovered_records;
-        let (image, tail, sealed_base) = mutate_iteration(config.seed, iteration, &source, config.max_mutations);
+        let (image, tail, sealed_base) = mutate_iteration(config.seed, iteration, &source);
         check(iteration, &source, &image, &mut report);
         if let Some(fault) = tail {
             let base = if sealed_base {
@@ -563,7 +562,7 @@ pub fn write_corpus(root: &Path, seed: u64) -> io::Result<usize> {
     add("garbage-small.seg", DetRng::new(seed ^ 1).bytes(600));
     add("empty.seg", Vec::new());
     for iteration in 0..12u64 {
-        let (image, _, _) = mutate_iteration(seed, iteration, &source, defaults.max_mutations);
+        let (image, _, _) = mutate_iteration(seed, iteration, &source);
         add(&format!("mutated-{iteration:02}.seg"), image);
     }
 
@@ -627,27 +626,6 @@ fn footer_bytes(sealed: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn mutation_limit_controls_corruption_and_zero_clamps_to_one() {
-        let source = build_source(9, 16, 96);
-        let mut different = 0;
-        for iteration in 0..100 {
-            let one = mutate_iteration(9, iteration, &source, 1);
-            let zero = mutate_iteration(9, iteration, &source, 0);
-            let many = mutate_iteration(9, iteration, &source, 8);
-            assert_eq!(zero, one, "zero must clamp to one layer");
-            if one.1.is_some() {
-                assert_eq!(one, many, "tail faults ignore the mixed-corruption limit");
-            } else if one.0 != many.0 {
-                different += 1;
-            }
-        }
-        assert!(
-            different > 0,
-            "the mutation limit must change mixed corruption"
-        );
-    }
 
     #[test]
     fn the_source_segment_is_valid() {

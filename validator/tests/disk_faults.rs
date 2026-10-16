@@ -141,8 +141,11 @@ fn corrupt_sealed_header_fail_stops_the_uploader() {
 
     let result = session.upload_pass();
     match &result {
-        Err(bkxpro_validator::HarnessError::Uploader(
-            bkxpro_uploader::UploaderError::CorruptSegment { segment_id, .. },
+        Err((
+            _,
+            bkxpro_validator::HarnessError::Uploader(
+                bkxpro_uploader::UploaderError::CorruptSegment { segment_id, .. },
+            ),
         )) => assert_eq!(*segment_id, 0),
         other => panic!("expected CorruptSegment, got {other:?}"),
     }

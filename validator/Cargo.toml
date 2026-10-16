@@ -7,10 +7,10 @@ description = "Validator harness: deterministic simulation, fault injection, fuz
 
 [dependencies]
 bkxpro-codec = { path = "../codec" }
-bkxpro-index = { path = "../index" }
+bkxpro-indexer = { path = "../indexer" }
 bkxpro-io = { path = "../io" }
-bkxpro-read-cache = { path = "../read-cache" }
-bkxpro-segment-writer = { path = "../segment-writer" }
+bkxpro-reader = { path = "../reader" }
+bkxpro-segmenter = { path = "../segmenter" }
 bkxpro-uploader = { path = "../uploader" }
 async-trait = "0.1"
 bytes = "1.10"

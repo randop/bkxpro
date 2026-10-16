@@ -263,13 +263,24 @@ impl<B: BlobStore> SegmentUploader<B> {
     }
 
     /// One upload pass over every segment that still needs remote durability.
-    pub async fn process_pending(&self) -> Result<UploadReport, UploaderError> {
-        self.check_healthy()?;
+    /// Errors include the partial report, so completed work is retained even
+    /// when another segment fails. Failures before the scan have an empty report.
+    pub async fn process_pending(&self) -> Result<UploadReport, (UploadReport, UploaderError)> {
+        self.check_healthy()
+            .map_err(|error| (UploadReport::default(), error))?;
         // A fresh manifest view: the cached copy may predate another writer or a
         // previous process, and every deletion decision reads from it.
-        let manifest = self.manifest.refresh().await?;
+        let manifest = self
+            .manifest
+            .refresh()
+            .await
+            .map_err(|error| (UploadReport::default(), error.into()))?;
         let mut pending = Vec::new();
-        for (segment_id, meta) in self.index.iter_segments()? {
+        for (segment_id, meta) in self
+            .index
+            .iter_segments()
+            .map_err(|error| (UploadReport::default(), error.into()))?
+        {
             if matches!(
                 meta.state,
                 SegmentState::Sealed | SegmentState::Uploading | SegmentState::Uploaded
@@ -282,6 +293,7 @@ impl<B: BlobStore> SegmentUploader<B> {
             examined: pending.len(),
             ..Default::default()
         };
+        let mut failure: Option<UploaderError> = None;
         for (segment_id, meta) in pending {
             let record = manifest.find(segment_id).cloned();
             match self.advance(segment_id, &meta, record).await {
@@ -290,17 +302,24 @@ impl<B: BlobStore> SegmentUploader<B> {
                 Ok(Advance::AlreadyDeleted) => report.already_deleted += 1,
                 Ok(Advance::PendingUpload) => report.pending += 1,
                 Err(error) => {
+                    report.pending += 1;
                     if self.is_poisoned() {
-                        return Err(error);
+                        return Err((report, error));
                     }
                     // Keep the local bytes and retry on the next pass, but do not
-                    // starve the remaining segments.
+                    // starve the remaining segments: report the failure after the
+                    // pass so the caller sees it.
                     warn!(segment_id, error = %error, "upload failed for one segment");
-                    report.pending += 1;
+                    if failure.is_none() {
+                        failure = Some(error);
+                    }
                 }
             }
         }
-        Ok(report)
+        match failure {
+            Some(error) => Err((report, error)),
+            None => Ok(report),
+        }
     }
 
     /// Run recovery once, then keep uploading until `shutdown` is set. Fatal
@@ -319,7 +338,7 @@ impl<B: BlobStore> SegmentUploader<B> {
                         );
                     }
                 }
-                Err(error) => {
+                Err((_report, error)) => {
                     if self.is_poisoned() {
                         return Err(error);
                     }
@@ -1052,7 +1071,7 @@ mod tests {
         let fixture = fixture(|_| {});
         put_segment_meta(&fixture.index, 5, SegmentState::Sealed, None);
 
-        let error = fixture.uploader.process_pending().await.unwrap_err();
+        let (_report, error) = fixture.uploader.process_pending().await.unwrap_err();
         assert!(
             matches!(error, UploaderError::LocalSegmentMissing { segment_id: 5 }),
             "{error:?}"
@@ -1062,7 +1081,7 @@ mod tests {
         assert_eq!(state_of(&fixture.index, 5), SegmentState::Sealed);
         assert!(manifest_records(&fixture).await.is_empty());
 
-        let error = fixture.uploader.process_pending().await.unwrap_err();
+        let (_report, error) = fixture.uploader.process_pending().await.unwrap_err();
         assert!(matches!(error, UploaderError::Poisoned { .. }));
 
         fixture.worker.shutdown().await.unwrap();
@@ -1097,7 +1116,7 @@ mod tests {
             .await
             .unwrap();
 
-        let error = fixture.uploader.process_pending().await.unwrap_err();
+        let (_report, error) = fixture.uploader.process_pending().await.unwrap_err();
         assert!(
             matches!(
                 error,
@@ -1150,7 +1169,7 @@ mod tests {
             .await
             .unwrap();
 
-        let error = fixture.uploader.process_pending().await.unwrap_err();
+        let (_report, error) = fixture.uploader.process_pending().await.unwrap_err();
         assert!(
             matches!(error, UploaderError::ManifestConflict { segment_id: 7 }),
             "{error:?}"
@@ -1208,6 +1227,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn failed_pass_keeps_counts_and_continues_other_segments() {
+        let fixture = fixture(|io| {
+            for segment_id in 0..3 {
+                install(
+                    io,
+                    Path::new(&format!("/sim/{segment_id}.seg")),
+                    &sealed_image(segment_id, 1, 1),
+                );
+            }
+        });
+        for segment_id in 0..3 {
+            put_segment_meta(&fixture.index, segment_id, SegmentState::Sealed, None);
+        }
+        // Exhaust the first segment's retries, then let later segments succeed.
+        fixture.blob.with_plan(|plan| plan.put_transient = 3);
+        let (report, error) = fixture.uploader.process_pending().await.unwrap_err();
+        assert!(matches!(
+            error,
+            UploaderError::RetriesExhausted { segment_id: 0, .. }
+        ));
+        assert_eq!(report.examined, 3);
+        assert_eq!(report.uploaded, 2);
+        assert_eq!(report.pending, 1);
+        assert!(!fixture.uploader.is_poisoned());
+        assert_eq!(state_of(&fixture.index, 0), SegmentState::Uploading);
+        assert_eq!(state_of(&fixture.index, 1), SegmentState::Deleted);
+        assert_eq!(state_of(&fixture.index, 2), SegmentState::Deleted);
+        assert_eq!(
+            fixture.uploader.process_pending().await.unwrap().uploaded,
+            1
+        );
+        fixture.worker.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn fatal_pass_keeps_counts_from_completed_segments() {
+        let fixture = fixture(|io| {
+            install(io, Path::new("/sim/0.seg"), &sealed_image(0, 1, 1));
+        });
+        for segment_id in 0..2 {
+            put_segment_meta(&fixture.index, segment_id, SegmentState::Sealed, None);
+        }
+        let (report, error) = fixture.uploader.process_pending().await.unwrap_err();
+        assert!(matches!(
+            error,
+            UploaderError::LocalSegmentMissing { segment_id: 1 }
+        ));
+        assert_eq!(report.examined, 2);
+        assert_eq!(report.uploaded, 1);
+        assert_eq!(report.pending, 1);
+        assert!(fixture.uploader.is_poisoned());
+        let (report, error) = fixture.uploader.process_pending().await.unwrap_err();
+        assert_eq!(report, UploadReport::default());
+        assert!(matches!(error, UploaderError::Poisoned { .. }));
+        fixture.worker.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn exhausted_retries_keep_everything_local() {
         let fixture = fixture(|io| {
             install(io, Path::new("/sim/10.seg"), &sealed_image(10, 3, 2));
@@ -1217,7 +1294,7 @@ mod tests {
             .blob
             .with_plan(|plan| plan.put_persistent_failure = true);
 
-        let error = fixture.uploader.process_pending().await.unwrap_err();
+        let (_report, error) = fixture.uploader.process_pending().await.unwrap_err();
         assert!(
             matches!(
                 error,

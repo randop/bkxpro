@@ -177,8 +177,12 @@ fn a_fenced_writer_never_commits_and_never_deletes() {
 
     let result = session.upload_pass();
     match &result {
-        Err(bkxpro_validator::HarnessError::Uploader(
-            bkxpro_uploader::UploaderError::Fenced { segment_id, .. },
+        Err((
+            _,
+            bkxpro_validator::HarnessError::Uploader(bkxpro_uploader::UploaderError::Fenced {
+                segment_id,
+                ..
+            }),
         )) => assert_eq!(*segment_id, fence.segment_index),
         other => panic!("expected an UploaderError::Fenced, got {other:?}"),
     }
@@ -207,4 +211,24 @@ fn a_fenced_writer_never_commits_and_never_deletes() {
         "the old epoch must never appear in the manifest after fencing"
     );
     assert_eq!(session.check_invariants(), Vec::<String>::new());
+}
+
+/// A fatal error on a later segment must retain the earlier segment's progress.
+#[test]
+fn drive_uploads_counts_completed_segments_in_a_failed_pass() {
+    let mut plan = preset("smoke", 5).unwrap();
+    plan.work.segments = 2;
+    let mut session = Session::new(&plan).unwrap();
+    for segment_id in 0..2 {
+        sealed_write(&mut session, &plan, segment_id);
+    }
+    session.restart().unwrap();
+    session.mock().fence_after_put(1, 99);
+    let summary = session.drive_uploads(1).unwrap();
+    assert_eq!(summary.passes, 1);
+    assert_eq!(summary.examined, 2);
+    assert_eq!(summary.uploaded, 1);
+    assert_eq!(summary.pending, 1);
+    assert!(summary.last_error.unwrap().contains("fenced"));
+    assert!(session.uploader_poisoned());
 }
