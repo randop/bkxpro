@@ -1,0 +1,33 @@
+[package]
+name = "bkxpro-validator"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Validator harness: deterministic simulation, fault injection, fuzzing support, and soak runs for bkxpro (RAN-132)"
+
+[dependencies]
+bkxpro-codec = { path = "../codec" }
+bkxpro-index = { path = "../index" }
+bkxpro-io = { path = "../io" }
+bkxpro-read-cache = { path = "../read-cache" }
+bkxpro-segment-writer = { path = "../segment-writer" }
+bkxpro-uploader = { path = "../uploader" }
+async-trait = "0.1"
+bytes = "1.10"
+crc32c = "0.6"
+libc = "0.2"
+object_store = { version = "0.14", features = ["aws"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.8"
+thiserror = "2.0"
+tokio = { version = "1.40", features = ["rt", "net", "macros", "sync", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+proptest = "1.6"
+tempfile = "3.8"
+
+[[bin]]
+name = "bkxpro-validator"
+path = "src/bin/bkxpro-validator.rs"
