@@ -1,9 +1,9 @@
 //! cgroup v2 memory accounting shared by the host preflight and the memory benches.
 //!
 //! `memory.current` counts RSS, page cache, and kernel memory charged to the process
-//! cgroup, so it measures the RAN-130 page-cache budget and the RAN-131 RSS budget
-//! against one number. Only the unified (v2) hierarchy is supported: the RAN-134 host
-//! preflight requires a finite `memory.max` and rejects hosts that still run cgroup v1.
+//! cgroup, so it measures the page-cache and RSS budgets against one number. Only the
+//! unified (v2) hierarchy is supported: the host preflight requires a finite
+//! `memory.max` and rejects hosts that still run cgroup v1.
 
 use std::fs;
 use std::io::{self, ErrorKind};

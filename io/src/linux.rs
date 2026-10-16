@@ -140,7 +140,7 @@ struct Request {
     keepalive: Option<CString>,
 }
 
-/// Real Linux implementation of the RAN-127 `SegmentIo` trait.
+/// Real Linux implementation of the `SegmentIo` trait.
 ///
 /// The ring is not internally synchronized and is restricted to its construction
 /// thread. Do not share it across threads. Every operation waits for completion before

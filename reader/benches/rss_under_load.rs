@@ -1,4 +1,4 @@
-//! RSS-under-load benchmark suite for the RAN-131 reader cache.
+//! RSS-under-load benchmark suite for the reader cache.
 //!
 //! Every scenario samples the process cgroup's `memory.current` (RSS + page cache +
 //! kernel memory) and `/proc/self/status` `VmRSS`, reports cache hit rates and per-tier
@@ -1459,7 +1459,7 @@ fn main() {
         },
     );
     println!(
-        "bkxpro reader RSS-under-load benchmark (RAN-131)\n\
+        "bkxpro reader RSS-under-load benchmark\n\
          budget: {} (foyer io engine: {})\n\
          params: entries={} payload={} B duration={:?} backlog={} root={}\n\
          caution: on tmpfs the segment bytes are charged to memory.current; prefer a \

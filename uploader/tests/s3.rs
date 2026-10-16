@@ -143,7 +143,7 @@ async fn uploads_a_multipart_segment_and_reads_it_back_with_ranged_gets() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let run = format!("ran130-test-{}-{nanos}", std::process::id());
+    let run = format!("uploader-test-{}-{nanos}", std::process::id());
     let config = UploaderConfig {
         data_dir: data_dir.clone(),
         s3_prefix: format!("{run}/segments"),

@@ -13,14 +13,17 @@
 //!   verification catch the corrupt bytes. The second test pins that behavior, so
 //!   closing the gap later shows up as a test change instead of a silent surprise.
 
+use bkxpro_codec::HEADER_SIZE;
 use bkxpro_validator::lifecycle::{AppendSpec, WriteOutcome, WriteSpec};
 use bkxpro_validator::plan::{DiskFault, FaultArm, Plan};
 use bkxpro_validator::{preset, run_plan, Session, TraceEvent, WriteEnd};
-use bkxpro_codec::HEADER_SIZE;
 
 fn report_with_fault(fault: DiskFault, at: usize) -> bkxpro_validator::RunReport {
     let mut plan = preset("disk-faults", 9).unwrap();
-    plan.disk_faults = vec![FaultArm { at_append: at, fault }];
+    plan.disk_faults = vec![FaultArm {
+        at_append: at,
+        fault,
+    }];
     run_plan(&plan).expect("scenario runs")
 }
 
@@ -55,7 +58,10 @@ fn acquire_faults_fail_the_write_phase_cleanly() {
             report.violations, report.notes
         );
         assert!(
-            report.notes.iter().any(|note| note.contains("did not start")),
+            report
+                .notes
+                .iter()
+                .any(|note| note.contains("did not start")),
             "{fault:?}: the write phase should have failed before starting; notes {:?}",
             report.notes
         );
@@ -100,10 +106,12 @@ fn write_sealed_zero(session: &mut Session, plan: &Plan) -> WriteOutcome {
 }
 
 fn recorded_corrupt_sealed(session: &Session) -> bool {
-    session.trace.events().iter().any(|event| matches!(
-        event,
-        TraceEvent::Checkpoint { name } if name.starts_with("corrupt-sealed:")
-    ))
+    session.trace.events().iter().any(|event| {
+        matches!(
+            event,
+            TraceEvent::Checkpoint { name } if name.starts_with("corrupt-sealed:")
+        )
+    })
 }
 
 fn recorded_unlink(session: &Session, segment_id: u64) -> bool {

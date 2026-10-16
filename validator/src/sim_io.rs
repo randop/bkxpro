@@ -1,4 +1,4 @@
-//! A cloneable handle around the RAN-128 deterministic backend.
+//! A cloneable handle around the deterministic backend.
 //!
 //! The validator harness runs the writer on the main thread and the uploader's
 //! I/O worker on a dedicated thread, both against the same simulated storage. This
@@ -61,9 +61,14 @@ pub enum SimulatedFault {
         garbage_bytes: usize,
     },
     /// The write succeeds and then one byte at `byte_offset` is flipped.
-    CorruptNextWrite { byte_offset: usize, xor: u8 },
+    CorruptNextWrite {
+        byte_offset: usize,
+        xor: u8,
+    },
     FailNextSync,
-    SlowNextSync { micros: u64 },
+    SlowNextSync {
+        micros: u64,
+    },
     FailNextTruncate,
     FailNextDirectorySync,
     FailNextAcquire,

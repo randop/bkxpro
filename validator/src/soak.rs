@@ -1,4 +1,4 @@
-//! Soak driver: the long-running CI/nightly loop (RAN-132).
+//! Soak driver: the long-running CI/nightly loop.
 //!
 //! A soak is the scenario matrix plus wall-clock: every iteration picks a preset
 //! and a seed derived from the run index, runs it against the deterministic
@@ -168,8 +168,7 @@ fn run_soak_with(
         let seed = DetRng::new(config.base_seed)
             .derive_from(&[b"soak-run", &run_index.to_le_bytes()])
             .next_u64();
-        let scenario_name =
-            config.scenarios[(run_index as usize) % config.scenarios.len()].clone();
+        let scenario_name = config.scenarios[(run_index as usize) % config.scenarios.len()].clone();
         let plan = match preset(&scenario_name, seed) {
             Some(plan) => plan,
             None => {
@@ -192,7 +191,9 @@ fn run_soak_with(
                         ));
                     }
                     if let Some(incidents) = &config.incidents {
-                        report.incidents.push(write_incident(incidents, &run_report)?);
+                        report
+                            .incidents
+                            .push(write_incident(incidents, &run_report)?);
                     }
                 }
                 if let Some(log) = &config.log {
@@ -269,7 +270,9 @@ fn run_soak_with(
                     let mut labeled = round.clone();
                     labeled.round = (base_round + offset as u64) as u32;
                     on_kill(&labeled);
-                    report.kill_violations.extend(round.violations.iter().cloned());
+                    report
+                        .kill_violations
+                        .extend(round.violations.iter().cloned());
                 }
             }
         }

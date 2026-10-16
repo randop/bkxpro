@@ -99,9 +99,14 @@ pub enum DiskFault {
         garbage_bytes: usize,
     },
     /// The write succeeds, then one byte is flipped.
-    Corrupt { byte_offset: usize, xor: u8 },
+    Corrupt {
+        byte_offset: usize,
+        xor: u8,
+    },
     FailSync,
-    SlowSync { micros: u64 },
+    SlowSync {
+        micros: u64,
+    },
     FailTruncate,
     FailDirectorySync,
     FailAcquire,
@@ -309,7 +314,10 @@ pub fn preset(name: &str, seed: u64) -> Option<Plan> {
                 2 => DiskFault::Enospc,
                 _ => DiskFault::FailSync,
             };
-            plan.disk_faults = vec![FaultArm { at_append: at, fault }];
+            plan.disk_faults = vec![FaultArm {
+                at_append: at,
+                fault,
+            }];
             plan.power_cut_after_write = true;
         }
         ScenarioKind::Fenced => {
@@ -410,6 +418,8 @@ mod tests {
     #[test]
     fn replay_commands_are_copy_pasteable() {
         let plan = preset("s3-chaos", 42).unwrap();
-        assert!(plan.replay_command().contains("--scenario s3-chaos --seed 42"));
+        assert!(plan
+            .replay_command()
+            .contains("--scenario s3-chaos --seed 42"));
     }
 }

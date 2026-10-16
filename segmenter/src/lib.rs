@@ -1,13 +1,13 @@
-//! Segment writer core for RAN-127.
+//! Segment writer core.
 //!
 //! This crate deliberately owns the segment-writer algorithm, not the Linux I/O
-//! runtime. The RAN-134 adapter implements [`SegmentIo`] using its registered
+//! runtime. The production adapter implements [`SegmentIo`] using its registered
 //! buffers/files and io_uring ring. In particular, `commit_batch` must submit all
 //! aligned writes and an explicitly ordered `fdatasync`, returning only after every
 //! completion succeeds. This interface has no `pwrite`/buffered-I/O fallback.
 //!
 //! Buffers passed to [`SegmentWriter::create`] and `AlignedSegmentEncoder` must be
-//! leases from the RAN-134 registered, 4 KiB-aligned buffer pool in production. The
+//! leases from the registered, 4 KiB-aligned buffer pool in production. The
 //! small [`AlignedBuffer`] helper is intended for tests and standalone tooling; it
 //! does not register memory with io_uring.
 
@@ -193,7 +193,7 @@ pub struct AcquiredSegment<F> {
     pub directory_entry_changed: bool,
 }
 
-/// Narrow RAN-134 integration seam. Implementations must use registered buffers/files
+/// Narrow io_uring integration seam. Implementations must use registered buffers/files
 /// and io_uring for the production path. `write_batch` must wait for exact successful
 /// completion of every write; `commit_batch` must order writes before `fdatasync` and
 /// wait for both the writes and sync. No operation may silently retry a failed write.
@@ -734,7 +734,7 @@ impl<I: SegmentIo> SegmentWriter<I> {
 }
 
 /// A 4 KiB-aligned owning allocation for tests and local codec tooling. Production code
-/// should instead lease a fixed buffer from RAN-134 and register it with the active ring.
+/// should instead lease a fixed buffer and register it with the active ring.
 pub struct AlignedBuffer {
     ptr: std::ptr::NonNull<u8>,
     layout: std::alloc::Layout,

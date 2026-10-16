@@ -1,4 +1,4 @@
-# Read cache memory tuning guide (RAN-131)
+# Read cache memory tuning guide
 
 How to budget the read path's memory, run the RSS-under-load benchmark under a real
 cgroup cap, and interpret the report.
@@ -225,7 +225,7 @@ allocator tuning is a second-order optimization behind tier sizing.
 
 ## Known limitations
 
-- The S3 fallback is a stub (`ReadCacheError::S3Read`) until RAN-130's uploader exists;
+- The S3 fallback is a stub (`ReadCacheError::S3Read`) until the uploader exists;
   the outage scenario therefore measures backlog memory and retry behavior, not ranged
   GET latency.
 - The benchmark uses temp directories under `BENCH_ROOT`; point it at a disk-backed

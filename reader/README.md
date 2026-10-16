@@ -1,4 +1,4 @@
-# bkxpro read cache — RAN-131
+# bkxpro read cache
 
 This crate contains the foyer hybrid read cache for sealed segment blocks and the
 RSS-under-load benchmark that validates its memory budget under a real cgroup cap.
@@ -19,7 +19,7 @@ RSS-under-load benchmark that validates its memory budget under a real cgroup ca
    takes a backend factory and returns a `Result`; the factory runs on a dedicated
    I/O thread to preserve io_uring ownership. Local reads are serialized on that
    thread and callers wait asynchronously through a bounded request channel.
-3. **S3** — ranged GET fallback (RAN-130). Once the uploader has removed the local
+3. **S3** — ranged GET fallback. Once the uploader has removed the local
    copy, the injected `SegmentReader` (the uploader's `FallbackSegmentReader`) routes
    the range read to the object store; a successful read is served with
    `ReadSource::S3` and warms the block cache, and a failed one surfaces as

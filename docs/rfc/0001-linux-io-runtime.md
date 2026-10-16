@@ -1,12 +1,11 @@
 # ADR 0001: Linux I/O runtime and host preflight
 
 - **Status:** Initial implementation; target-device fio evidence pending.
-- **Issue:** RAN-134.
 - **Scope:** local staging data path only. S3/TLS stays on Tokio/object_store and is not part of the acknowledgement path.
 
 ## Decision
 
-Use a thin in-house synchronous shard reactor based on `io-uring` 0.7, wrapped by the narrow `SegmentIo` trait consumed by RAN-127. Do not introduce a portable backend. Non-Linux targets fail to compile.
+Use a thin in-house synchronous shard reactor based on `io-uring` 0.7, wrapped by the narrow `SegmentIo` trait consumed by the segment writer. Do not introduce a portable backend. Non-Linux targets fail to compile.
 
 Each shard owns exactly one ring and submits from one fixed issuer thread. Start with `SINGLE_ISSUER` and `DEFER_TASKRUN` (both require the selected Linux 6.1 baseline). SQPOLL and IOPOLL are not enabled by default: SQPOLL reserves a CPU, and IOPOLL has device/filesystem restrictions. Evaluate them only as measured variants. Register fixed buffers and fixed files; probe required opcodes at startup. Fail if a required capability is absent.
 
@@ -28,11 +27,11 @@ The implementation is one-ring-per-shard and enforces the ring owner's thread at
 
 ## Filesystem setup and recovery contracts
 
-Segment files are opened `O_DIRECT`, created/renamed/unlinked with parent directory `fsync`, preallocated with `fallocate`, and fully pre-zeroed by the segment writer before first use. The RAN-134 adapter does not acknowledge a block until every write completion and a following successful `fdatasync` have been observed. Truncation uses `ftruncate(2)` because `IORING_OP_FTRUNCATE` is newer than Linux 6.1, then syncs the size change through the ring. No commit-path `pwrite`/buffered fallback exists.
+Segment files are opened `O_DIRECT`, created/renamed/unlinked with parent directory `fsync`, preallocated with `fallocate`, and fully pre-zeroed by the segment writer before first use. The io_uring adapter does not acknowledge a block until every write completion and a following successful `fdatasync` have been observed. Truncation uses `ftruncate(2)` because `IORING_OP_FTRUNCATE` is newer than Linux 6.1, then syncs the size change through the ring. No commit-path `pwrite`/buffered fallback exists.
 
 ## Measurement plan
 
-On each target machine, use `scripts/fio-baseline.sh` against a dedicated test directory on the exact staging device. Capture fio JSON for direct io_uring writes with no sync, `fsync=N`, `fdatasync=N`, and `dsync` variants; additionally measure `RwfDsync` through the application because fio's sync modes are comparison baselines, not an exact emulation of the app's `RWF_DSYNC` SQEs. Capture kernel version, filesystem, device model, queue/write-cache state, fio version, and test parameters with the output. Compare throughput and p50/p99 commit latency and count `io_uring_enter` using `perf trace`/`strace`. Use results to choose the per-device-class mode and define RAN-127's target gap.
+On each target machine, use `scripts/fio-baseline.sh` against a dedicated test directory on the exact staging device. Capture fio JSON for direct io_uring writes with no sync, `fsync=N`, `fdatasync=N`, and `dsync` variants; additionally measure `RwfDsync` through the application because fio's sync modes are comparison baselines, not an exact emulation of the app's `RWF_DSYNC` SQEs. Capture kernel version, filesystem, device model, queue/write-cache state, fio version, and test parameters with the output. Compare throughput and p50/p99 commit latency and count `io_uring_enter` using `perf trace`/`strace`. Use results to choose the per-device-class mode and define the segment writer's target gap.
 
 | Environment | Kernel / FS / device | Result | Status |
 |---|---|---|---|

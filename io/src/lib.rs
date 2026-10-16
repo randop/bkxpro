@@ -1,4 +1,4 @@
-//! Linux-only io_uring storage I/O, cgroup accounting, and host preflight for RAN-134.
+//! Linux-only io_uring storage I/O, cgroup accounting, and host preflight.
 //!
 //! Production writes use `O_DIRECT`, registered (fixed) buffers, registered files,
 //! and explicit write -> `fdatasync` ordering. There is intentionally no buffered or

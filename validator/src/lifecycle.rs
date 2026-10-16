@@ -32,24 +32,20 @@ use std::{
     time::Duration,
 };
 
-use bytes::Bytes;
 use bkxpro_codec::{
     AlignedSegmentEncoder, CodecError, SegmentEncoder, SegmentHeader, SegmentView, TrailerWire,
     BLOCK_SIZE, HEADER_SIZE, RECORD_HEADER_SIZE, TRAILER_SIZE,
 };
-use bkxpro_indexer::{
-    EntryLocation, Index, IndexConfig, IndexError, SegmentMeta, SegmentState,
-};
+use bkxpro_indexer::{EntryLocation, Index, IndexConfig, IndexError, SegmentMeta, SegmentState};
 use bkxpro_reader::SegmentReader;
-use bkxpro_segmenter::{
-    AlignedBuffer, SegmentIo, SegmentWriter, WriterConfig, WriteOp,
-};
+use bkxpro_segmenter::{AlignedBuffer, SegmentIo, SegmentWriter, WriteOp, WriterConfig};
 use bkxpro_uploader::{
     BlobError, BlobObject, BlobStore, ExpectedVersion, FallbackSegmentReader, ManifestRecord,
     ObjectInfo, PutOutcome, RecoveryReport, S3SegmentReader, SegmentIoWorker, SegmentUploader,
     StreamItem, UploadReport, UploaderConfig, UploaderError, UploaderStats, WorkerError,
     WorkerSegmentReader,
 };
+use bytes::Bytes;
 use tempfile::TempDir;
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -364,9 +360,8 @@ impl Session {
 
     pub fn step(&mut self, name: impl Into<String>) {
         let name = name.into();
-        self.trace.record(TraceEvent::Checkpoint {
-            name: name.clone(),
-        });
+        self.trace
+            .record(TraceEvent::Checkpoint { name: name.clone() });
         self.steps.push(name);
     }
 
@@ -577,8 +572,7 @@ impl Session {
 
         self.pushed_records
             .insert(spec.segment_id, outcome.records.clone());
-        self.attempted_records
-            .insert(spec.segment_id, attempted);
+        self.attempted_records.insert(spec.segment_id, attempted);
         for ack in &outcome.acked {
             self.acked.push(*ack);
         }
@@ -827,13 +821,19 @@ impl Session {
                 sealed_meta(header.writer_epoch, sealed_bytes.len(), &records),
             )?;
             for (ledger, entry, location) in entry_rows {
-                self.index().put_entry(&mut batch, ledger, entry, location)?;
+                self.index()
+                    .put_entry(&mut batch, ledger, entry, location)?;
             }
             batch.commit().map_err(IndexError::from)?;
             self.index().persist()?;
             let unacked_recovered = records
                 .iter()
-                .filter(|record| !self.acked.iter().any(|ack| (ack.ledger, ack.entry) == **record))
+                .filter(|record| {
+                    !self
+                        .acked
+                        .iter()
+                        .any(|ack| (ack.ledger, ack.entry) == **record)
+                })
                 .copied()
                 .collect();
             for record in &records {
@@ -1529,8 +1529,7 @@ fn index_config(db_path: &Path) -> IndexConfig {
 /// segment left by a crash" (repairable) from "sealed segment with corruption"
 /// (must fail-stop).
 pub(crate) fn is_sealed_trailer(image: &[u8]) -> bool {
-    image.len() >= TRAILER_SIZE
-        && TrailerWire::parse(&image[image.len() - TRAILER_SIZE..]).is_ok()
+    image.len() >= TRAILER_SIZE && TrailerWire::parse(&image[image.len() - TRAILER_SIZE..]).is_ok()
 }
 
 pub fn to_simulated_fault(fault: DiskFault) -> SimulatedFault {
@@ -1545,10 +1544,9 @@ pub fn to_simulated_fault(fault: DiskFault) -> SimulatedFault {
             prefix_bytes,
             garbage_bytes,
         },
-        DiskFault::Corrupt { byte_offset, xor } => SimulatedFault::CorruptNextWrite {
-            byte_offset,
-            xor,
-        },
+        DiskFault::Corrupt { byte_offset, xor } => {
+            SimulatedFault::CorruptNextWrite { byte_offset, xor }
+        }
         DiskFault::FailSync => SimulatedFault::FailNextSync,
         DiskFault::SlowSync { micros } => SimulatedFault::SlowNextSync { micros },
         DiskFault::FailTruncate => SimulatedFault::FailNextTruncate,

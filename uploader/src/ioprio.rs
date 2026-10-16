@@ -1,7 +1,7 @@
 //! Best-effort lowering of the uploader I/O thread's I/O scheduling priority.
 //!
 //! Uploads are background work: they must not compete with the commit path for
-//! device bandwidth (RAN-130 scope). [`set_current_thread_priority`] wraps
+//! device bandwidth. [`set_current_thread_priority`] wraps
 //! `ioprio_set(2)` for the calling thread, which is why the worker applies it from
 //! inside its own thread - `IOPRIO_WHO_PROCESS` with `who = 0` targets the calling
 //! thread in the kernel. Deployments that cannot grant the capability, or that

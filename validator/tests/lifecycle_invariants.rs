@@ -11,8 +11,7 @@ fn entries_for(session: &mut Session, plan: &Plan, segment_id: u64) -> Vec<Appen
         .map(|index| {
             let ledger = index % ledgers + 1;
             let entry = segment_id * 1_000_000 + index;
-            let payload =
-                Session::entry_payload(plan.seed, ledger, entry, plan.work.payload_bytes);
+            let payload = Session::entry_payload(plan.seed, ledger, entry, plan.work.payload_bytes);
             session.remember_payload(ledger, entry, &payload);
             AppendSpec {
                 ledger,
@@ -24,11 +23,7 @@ fn entries_for(session: &mut Session, plan: &Plan, segment_id: u64) -> Vec<Appen
         .collect()
 }
 
-fn sealed_write(
-    session: &mut Session,
-    plan: &Plan,
-    segment_id: u64,
-) -> Vec<(u64, u64)> {
+fn sealed_write(session: &mut Session, plan: &Plan, segment_id: u64) -> Vec<(u64, u64)> {
     let entries = entries_for(session, plan, segment_id);
     let outcome = session
         .write_segment(&WriteSpec {
@@ -173,7 +168,9 @@ fn a_fenced_writer_never_commits_and_never_deletes() {
         sealed_write(&mut session, &plan, segment_id);
     }
     session.restart().unwrap();
-    session.mock().fence_after_put(fence.segment_index, fence.epoch);
+    session
+        .mock()
+        .fence_after_put(fence.segment_index, fence.epoch);
 
     let result = session.upload_pass();
     match &result {

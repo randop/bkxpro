@@ -364,7 +364,10 @@ mod tests {
         append_run_log(&log, &report("smoke", 2, false, 11)).unwrap();
         assert_eq!(last_logged_seed(&log).unwrap(), Some(2));
         assert_eq!(logged_run_count(&log).unwrap(), 2);
-        assert_eq!(logged_run_count(&dir.path().join("missing.jsonl")).unwrap(), 0);
+        assert_eq!(
+            logged_run_count(&dir.path().join("missing.jsonl")).unwrap(),
+            0
+        );
         let dashboard = dashboard(&log).unwrap();
         assert_eq!(dashboard.total_runs(), 2);
         assert_eq!(dashboard.total_failures(), 1);

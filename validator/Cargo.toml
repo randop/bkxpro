@@ -3,7 +3,7 @@ name = "bkxpro-validator"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Validator harness: deterministic simulation, fault injection, fuzzing support, and soak runs for bkxpro (RAN-132)"
+description = "Validator harness: deterministic simulation, fault injection, fuzzing support, and soak runs for bkxpro"
 
 [dependencies]
 bkxpro-codec = { path = "../codec" }

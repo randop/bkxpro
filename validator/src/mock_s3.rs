@@ -212,7 +212,10 @@ impl MockS3 {
     }
 
     fn armed(&self) -> std::sync::MutexGuard<'_, Armed> {
-        self.inner.armed.lock().expect("mock s3 armed mutex poisoned")
+        self.inner
+            .armed
+            .lock()
+            .expect("mock s3 armed mutex poisoned")
     }
 
     /// Every object currently stored, keyed by object key.
@@ -225,7 +228,10 @@ impl MockS3 {
     }
 
     pub fn object(&self, key: &str) -> Option<Bytes> {
-        self.state().objects.get(key).map(|object| object.bytes.clone())
+        self.state()
+            .objects
+            .get(key)
+            .map(|object| object.bytes.clone())
     }
 
     pub fn object_count(&self) -> usize {
@@ -247,9 +253,8 @@ impl MockS3 {
     /// callers race, then hashed.
     pub fn content_digest(&self) -> u64 {
         let mut events = self.events();
-        events.sort_by(|a, b| {
-            (&a.key, a.op as u8, a.attempt).cmp(&(&b.key, b.op as u8, b.attempt))
-        });
+        events
+            .sort_by(|a, b| (&a.key, a.op as u8, a.attempt).cmp(&(&b.key, b.op as u8, b.attempt)));
         let encoded = serde_json::to_vec(&events).unwrap_or_default();
         digest_bytes(&[encoded])
     }
@@ -373,8 +378,7 @@ impl MockS3 {
         let mut rng = self.decision_rng(op, key, attempt);
         // Always consume one draw for latency, even at zero jitter, so the
         // decision draw below is at a fixed position in the stream.
-        let latency =
-            config.latency_base_micros + rng.below(config.latency_jitter_micros + 1);
+        let latency = config.latency_base_micros + rng.below(config.latency_jitter_micros + 1);
         let decision = match op {
             S3Op::Put => {
                 if rng.chance(config.put_fail_percent) {
@@ -594,9 +598,9 @@ impl BlobStore for MockS3 {
                 S3Outcome::Fatal => BlobError::Fatal(format!(
                     "{key}: simulated process death interrupted the PUT"
                 )),
-                _ => BlobError::Transient(format!(
-                    "{key}: injected PUT failure (no bytes accepted)"
-                )),
+                _ => {
+                    BlobError::Transient(format!("{key}: injected PUT failure (no bytes accepted)"))
+                }
             });
         }
         let lost = decision == Decision::LostResponse;
@@ -707,21 +711,12 @@ impl BlobStore for MockS3 {
         let (attempt, latency, decision) = self.begin_op(S3Op::GetRange, key);
         self.maybe_sleep(latency).await;
         if let Decision::FailPreWrite(outcome) = decision {
-            self.finish_event(self.new_event(
-                S3Op::GetRange,
-                key,
-                attempt,
-                outcome,
-                0,
-                latency,
-            ));
+            self.finish_event(self.new_event(S3Op::GetRange, key, attempt, outcome, 0, latency));
             return Err(match outcome {
                 S3Outcome::Fatal => BlobError::Fatal(format!(
                     "{key}: simulated process death interrupted the ranged GET"
                 )),
-                _ => BlobError::Transient(format!(
-                    "{key}: injected ranged GET failure"
-                )),
+                _ => BlobError::Transient(format!("{key}: injected ranged GET failure")),
             });
         }
         let object = self.state().objects.get(key).cloned();
@@ -808,9 +803,7 @@ impl BlobStore for MockS3 {
         let (attempt, latency, decision) = self.begin_op(S3Op::Cas, key);
         if let Decision::FailPreWrite(outcome) = decision {
             let error = match outcome {
-                S3Outcome::Conflict => {
-                    BlobError::Conflict(format!("{key}: injected CAS conflict"))
-                }
+                S3Outcome::Conflict => BlobError::Conflict(format!("{key}: injected CAS conflict")),
                 S3Outcome::Fatal => BlobError::Fatal(format!(
                     "{key}: simulated process death interrupted the CAS"
                 )),
@@ -836,9 +829,7 @@ impl BlobStore for MockS3 {
                             0,
                             latency,
                         ));
-                        return Err(BlobError::Conflict(format!(
-                            "{key}: object already exists"
-                        )));
+                        return Err(BlobError::Conflict(format!("{key}: object already exists")));
                     }
                     ExpectedVersion::Match(version) => {
                         if !matches_version(existing, version) {
@@ -868,9 +859,7 @@ impl BlobStore for MockS3 {
                             0,
                             latency,
                         ));
-                        return Err(BlobError::Conflict(format!(
-                            "{key}: object disappeared"
-                        )));
+                        return Err(BlobError::Conflict(format!("{key}: object disappeared")));
                     }
                 }
             }
@@ -957,7 +946,9 @@ mod tests {
     async fn clean_put_round_trips_bytes_and_checksum() {
         let store = MockS3::new(1);
         let payload: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
-        let outcome = put_payload(&store, &segment_key(7), &payload).await.unwrap();
+        let outcome = put_payload(&store, &segment_key(7), &payload)
+            .await
+            .unwrap();
         assert_eq!(outcome.len, payload.len() as u64);
         assert_eq!(outcome.crc32c, crc32c::crc32c(&payload));
         assert_eq!(store.object(&segment_key(7)).unwrap().as_ref(), payload);
@@ -1033,7 +1024,9 @@ mod tests {
         let store = MockS3::new(3);
         store.crash_after_successful_put(2);
         put_payload(&store, &segment_key(1), b"a").await.unwrap();
-        let error = put_payload(&store, &segment_key(2), b"b").await.unwrap_err();
+        let error = put_payload(&store, &segment_key(2), b"b")
+            .await
+            .unwrap_err();
         assert!(matches!(error, BlobError::Fatal(_)));
         assert_eq!(store.object(&segment_key(2)).unwrap().as_ref(), b"b");
     }
@@ -1072,7 +1065,9 @@ mod tests {
     async fn outage_fails_everything_transiently_for_its_window() {
         let store = MockS3::new(5);
         store.begin_outage(2);
-        let error = put_payload(&store, &segment_key(1), b"a").await.unwrap_err();
+        let error = put_payload(&store, &segment_key(1), b"a")
+            .await
+            .unwrap_err();
         assert!(matches!(error, BlobError::Transient(_)));
         let error = store
             .put_if_version(
@@ -1095,7 +1090,9 @@ mod tests {
         put_payload(&store, &segment_key(1), b"a").await.unwrap();
         // The clone observes the same successful-PUT counter, so this PUT trips
         // the crash point armed through the other handle.
-        let error = put_payload(&store, &segment_key(2), b"b").await.unwrap_err();
+        let error = put_payload(&store, &segment_key(2), b"b")
+            .await
+            .unwrap_err();
         assert!(matches!(error, BlobError::Fatal(_)));
     }
 

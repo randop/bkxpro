@@ -45,14 +45,20 @@ fn crash_upload_seed_1() {
 fn crash_lifecycle_seed_1() {
     let report = run("crash-lifecycle", 1);
     assert!(report.restarts >= 1);
-    assert!(!report.repairs.is_empty(), "an open segment must be repaired");
+    assert!(
+        !report.repairs.is_empty(),
+        "an open segment must be repaired"
+    );
 }
 
 #[test]
 fn power_cut_seed_1() {
     let report = run("power-cut", 1);
     assert!(report.restarts >= 1);
-    assert!(!report.repairs.is_empty(), "the open segment must be repaired");
+    assert!(
+        !report.repairs.is_empty(),
+        "the open segment must be repaired"
+    );
 }
 
 #[test]

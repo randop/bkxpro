@@ -3,7 +3,7 @@ name = "bkxpro-reader"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Foyer hybrid reader cache and read path for bkxpro (RAN-131)"
+description = "Foyer hybrid reader cache and read path for bkxpro"
 
 [dependencies]
 bkxpro-codec = { path = "../codec" }

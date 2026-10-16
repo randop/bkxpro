@@ -46,11 +46,7 @@ pub fn run_plan(plan: &Plan) -> Result<RunReport, HarnessError> {
 // ===== scenario drivers =====
 
 /// Happy path: write, seal, rebuild, read locally, upload, delete, read remotely.
-fn smoke(
-    session: &mut Session,
-    plan: &Plan,
-    run: &mut RunState,
-) -> Result<(), HarnessError> {
+fn smoke(session: &mut Session, plan: &Plan, run: &mut RunState) -> Result<(), HarnessError> {
     let entries = write_all_sealed(session, plan)?;
     let restart = session.restart()?;
     run.record_restart(&restart);
@@ -90,7 +86,9 @@ fn crash_upload(
     let crashed = drive_upload_life(session, run, Some(crash), 100)?;
     run.expect(crashed, "the armed crash point never fired");
     run.expect(
-        run.notes.iter().any(|note| note.contains("upload pass error")),
+        run.notes
+            .iter()
+            .any(|note| note.contains("upload pass error")),
         "the crash point must surface as an upload-pass error in the first life",
     );
     session.trace.record(TraceEvent::Crash {
@@ -165,11 +163,7 @@ fn crash_lifecycle(
 
 /// Power loss with a torn completion on the final append: the unsynced tail
 /// vanishes and recovery may only surface the valid prefix.
-fn power_cut(
-    session: &mut Session,
-    plan: &Plan,
-    run: &mut RunState,
-) -> Result<(), HarnessError> {
+fn power_cut(session: &mut Session, plan: &Plan, run: &mut RunState) -> Result<(), HarnessError> {
     let stop_after = plan.stop_first_segment_after;
     run.expect(stop_after > 0, "power-cut plan stops mid-append");
     let entries = entries_for(session, plan, 0);
@@ -187,7 +181,10 @@ fn power_cut(
             outcome.end,
             WriteEnd::Failed | WriteEnd::Stopped | WriteEnd::Open
         ),
-        format!("unexpected write end after a torn append: {:?}", outcome.end),
+        format!(
+            "unexpected write end after a torn append: {:?}",
+            outcome.end
+        ),
     );
 
     session.crash_device()?;
@@ -214,11 +211,7 @@ fn power_cut(
 /// Device faults (EIO/EAGAIN/ENOSPC/sync failure) during a sealed write. A failed
 /// writer means the process must fail-stop; a restart recovers from the bytes on
 /// disk and the run continues.
-fn disk_faults(
-    session: &mut Session,
-    plan: &Plan,
-    run: &mut RunState,
-) -> Result<(), HarnessError> {
+fn disk_faults(session: &mut Session, plan: &Plan, run: &mut RunState) -> Result<(), HarnessError> {
     run.expect(
         !plan.disk_faults.is_empty(),
         "disk-faults plan arms at least one fault",
@@ -228,11 +221,8 @@ fn disk_faults(
     // before the first append exists to attach them to, so arms at append 0 of
     // those classes are injected directly on the device. The rest travel through
     // `WriteSpec::arms`, which arms each right before its append index.
-    let (early, late): (Vec<FaultArm>, Vec<FaultArm>) = plan
-        .disk_faults
-        .iter()
-        .cloned()
-        .partition(|arm| {
+    let (early, late): (Vec<FaultArm>, Vec<FaultArm>) =
+        plan.disk_faults.iter().cloned().partition(|arm| {
             arm.at_append == 0
                 && matches!(
                     arm.fault,
@@ -241,7 +231,10 @@ fn disk_faults(
         });
     run.expect(
         early.len() <= 1,
-        format!("{} acquire-phase faults armed for a single create", early.len()),
+        format!(
+            "{} acquire-phase faults armed for a single create",
+            early.len()
+        ),
     );
     for arm in &early {
         session.sim.inject_fault(to_simulated_fault(arm.fault));
@@ -262,7 +255,8 @@ fn disk_faults(
                 !early.is_empty(),
                 format!("the write phase failed to start unexpectedly: {message}"),
             );
-            run.notes.push(format!("write phase did not start: {message}"));
+            run.notes
+                .push(format!("write phase did not start: {message}"));
             None
         }
         Err(error) => return Err(error),
@@ -361,7 +355,10 @@ fn fenced(session: &mut Session, plan: &Plan, run: &mut RunState) -> Result<(), 
         "the fenced segment committed our (older) epoch after the race",
     );
     if let Some(stats) = session.uploader_stats() {
-        run.expect(stats.fenced == 1, format!("expected 1 fencing event, saw {}", stats.fenced));
+        run.expect(
+            stats.fenced == 1,
+            format!("expected 1 fencing event, saw {}", stats.fenced),
+        );
     }
 
     // The fenced segment is still local, so it must be readable through the
@@ -605,7 +602,10 @@ fn upload_until_settled(
     max_passes: u32,
 ) -> Result<(), HarnessError> {
     let crashed = drive_upload_life(session, run, None, max_passes)?;
-    run.expect(!crashed, "upload life crashed although no crash point was armed");
+    run.expect(
+        !crashed,
+        "upload life crashed although no crash point was armed",
+    );
     run.expect(
         !session.uploader_poisoned(),
         format!(
@@ -814,12 +814,7 @@ pub struct RunReport {
     pub duration_ms: u64,
 }
 
-fn build_report(
-    plan: &Plan,
-    session: &Session,
-    run: RunState,
-    started: Instant,
-) -> RunReport {
+fn build_report(plan: &Plan, session: &Session, run: RunState, started: Instant) -> RunReport {
     let violations = run.violations;
     RunReport {
         scenario: plan.name.clone(),

@@ -1,4 +1,4 @@
-//! Real-endpoint S3 runs (RAN-132).
+//! Real-endpoint S3 runs.
 //!
 //! The simulated scenarios prove the durability invariants against the
 //! fault-injecting stand-in; this module drives the same lifecycle against a
@@ -95,12 +95,10 @@ impl RealS3Config {
             var("BKXPRO_S3_TEST_ACCESS_KEY"),
             var("BKXPRO_S3_TEST_SECRET_KEY"),
         ) else {
-            return Err(
-                "set BKXPRO_S3_TEST_BUCKET, BKXPRO_S3_TEST_ACCESS_KEY and \
+            return Err("set BKXPRO_S3_TEST_BUCKET, BKXPRO_S3_TEST_ACCESS_KEY and \
                  BKXPRO_S3_TEST_SECRET_KEY (plus BKXPRO_S3_TEST_ENDPOINT and \
                  BKXPRO_S3_TEST_REGION for an S3-compatible endpoint)"
-                    .to_string(),
-            );
+                .to_string());
         };
         Ok(Self {
             endpoint: var("BKXPRO_S3_TEST_ENDPOINT"),
@@ -202,9 +200,8 @@ pub fn run_real_s3(config: &RealS3Config) -> Result<RealS3Report, HarnessError> 
         manifest_key: format!("{prefix}/manifest/log.jsonl"),
     };
     let store = build_store(config).map_err(HarnessError::Message)?;
-    let blob: Arc<dyn BlobStore> = Arc::new(
-        ObjectStoreBlob::new(store.clone()).with_write_concurrency(2),
-    );
+    let blob: Arc<dyn BlobStore> =
+        Arc::new(ObjectStoreBlob::new(store.clone()).with_write_concurrency(2));
     let mut session = Session::with_store(&plan, blob, keys.clone())?;
 
     let mut notes = Vec::new();
@@ -301,9 +298,12 @@ pub fn run_real_s3(config: &RealS3Config) -> Result<RealS3Report, HarnessError> 
             remote_verify.segments_checked, remote_verify.records_checked,
         ));
     }
-    violations.extend(remote_verify.failures.iter().map(|failure| {
-        format!("remote verify: {failure}")
-    }));
+    violations.extend(
+        remote_verify
+            .failures
+            .iter()
+            .map(|failure| format!("remote verify: {failure}")),
+    );
     violations.extend(session.check_invariants());
 
     // Phase 4: remove this run's objects from the shared bucket. A failed run
@@ -403,11 +403,7 @@ fn build_store(config: &RealS3Config) -> Result<AmazonS3, String> {
 /// A fresh client is built here on purpose: the run's client keeps its pooled
 /// connections on the session's runtime, and driving them from this process's
 /// short-lived cleanup runtime would hang until the request timeout.
-fn cleanup(
-    config: &RealS3Config,
-    plan: &Plan,
-    keys: &StoreKeys,
-) -> Result<usize, HarnessError> {
+fn cleanup(config: &RealS3Config, plan: &Plan, keys: &StoreKeys) -> Result<usize, HarnessError> {
     let store = build_store(config).map_err(HarnessError::Message)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

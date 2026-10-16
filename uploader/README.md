@@ -1,4 +1,4 @@
-# bkxpro uploader — RAN-130
+# bkxpro uploader
 
 This crate streams sealed segment files to an S3-compatible object store and gates
 local deletion on a compare-and-swap commit to an append-only manifest, so a crash at
@@ -163,7 +163,7 @@ io_uring backend is covered by the `bkxpro-io` and `bkxpro-reader` suites.
 `uploader/benches/upload_page_cache.rs` (`harness = false`) runs a buffered control read
 and a real `UringSegmentIo` upload over the same sealed segment: the control read must
 move at least 32 MiB into the page cache (`memory.stat: file`) and the upload must add
-at most 8 MiB, which is the RAN-130 evidence that O_DIRECT uploads do not pollute the
+at most 8 MiB, which is evidence that O_DIRECT uploads do not pollute the
 page cache. It also reports the reader's byte-budget high water and the `memory.current`
 peak.
 
@@ -194,7 +194,7 @@ XFS/ext4 staging volume.
 - **Block-spanning payloads.** Ranged reads (local and remote alike) serve payloads
   that fit inside one 4 KiB block, which is the granularity of the block cache. The
   physical file interleaves 16-byte block headers, so a payload spanning blocks needs
-  reassembly in the read path (`bkxpro-reader`); that work is not part of RAN-130.
+  reassembly in the read path (`bkxpro-reader`); that work is not part of the uploader.
 - **Uploads are idempotent per key.** A crash between the PUT and the manifest commit
   re-uploads to the same key, so retries never leave orphaned objects or duplicate
   copies.

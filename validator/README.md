@@ -1,4 +1,4 @@
-# Validator harness (RAN-132)
+# Validator harness
 
 The harness breaks the durability contract on purpose and proves the product notices. Every
 layer asserts the same invariants:

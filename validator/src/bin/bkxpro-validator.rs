@@ -1,4 +1,4 @@
-//! `bkxpro-validator` command-line entry point (RAN-132).
+//! `bkxpro-validator` command-line entry point.
 //!
 //! Every harness capability is reachable here:
 //!
@@ -153,11 +153,14 @@ fn run() -> Result<bool, String> {
                 match arg.as_str() {
                     "--log" => log = Some(PathBuf::from(cursor.value("--log")?)),
                     "--json" => json = true,
-                    other => return Err(format!("unknown dashboard argument {other:?}; see --help")),
+                    other => {
+                        return Err(format!("unknown dashboard argument {other:?}; see --help"))
+                    }
                 }
             }
             let log = log.ok_or("dashboard requires --log PATH")?;
-            let dashboard = dashboard(&log).map_err(|error| format!("{}: {error}", log.display()))?;
+            let dashboard =
+                dashboard(&log).map_err(|error| format!("{}: {error}", log.display()))?;
             if json {
                 println!(
                     "{}",
@@ -284,7 +287,9 @@ impl SimOptions {
                 "--runs" => options.runs = cursor.parse("--runs")?,
                 "--replay" => options.replay = true,
                 "--log" => options.log = Some(PathBuf::from(cursor.value("--log")?)),
-                "--incidents" => options.incidents = Some(PathBuf::from(cursor.value("--incidents")?)),
+                "--incidents" => {
+                    options.incidents = Some(PathBuf::from(cursor.value("--incidents")?))
+                }
                 "--json" => options.json = true,
                 "--quiet" => options.quiet = true,
                 other => return Err(format!("unknown sim argument {other:?}; see --help")),
@@ -328,8 +333,13 @@ fn run_sim(options: &SimOptions) -> Result<bool, String> {
             Err(error) => {
                 failures += 1;
                 if let Some(incidents) = &options.incidents {
-                    write_harness_incident(incidents, plan.kind.name(), plan.seed, &error.to_string())
-                        .map_err(|io_error| io_error.to_string())?;
+                    write_harness_incident(
+                        incidents,
+                        plan.kind.name(),
+                        plan.seed,
+                        &error.to_string(),
+                    )
+                    .map_err(|io_error| io_error.to_string())?;
                 }
                 eprintln!(
                     "FAIL {} seed={} harness error: {error}\n  reproduce: {}",
@@ -347,7 +357,9 @@ fn run_sim(options: &SimOptions) -> Result<bool, String> {
             if !mismatches.is_empty() {
                 report.ok = false;
                 for mismatch in mismatches {
-                    report.violations.push(format!("replay mismatch: {mismatch}"));
+                    report
+                        .violations
+                        .push(format!("replay mismatch: {mismatch}"));
                 }
             }
         }
@@ -375,7 +387,11 @@ fn run_sim(options: &SimOptions) -> Result<bool, String> {
         println!(
             "sim: {}/{total} runs passed{}",
             total - failures,
-            if options.replay { " (double-run replay)" } else { "" }
+            if options.replay {
+                " (double-run replay)"
+            } else {
+                ""
+            }
         );
     }
     Ok(failures == 0)
@@ -624,9 +640,7 @@ impl KillSoakOptions {
                 }
                 "--keep" => options.keep = true,
                 "--json" => options.json = true,
-                other => {
-                    return Err(format!("unknown kill-soak argument {other:?}; see --help"))
-                }
+                other => return Err(format!("unknown kill-soak argument {other:?}; see --help")),
             }
         }
         if options.rounds == 0 {
@@ -788,12 +802,10 @@ impl S3RunOptions {
         config.keep = self.keep;
         if config.bucket.is_empty() || config.access_key.is_empty() || config.secret_key.is_empty()
         {
-            return Err(
-                "s3-run needs --bucket, --access-key and --secret-key (or \
+            return Err("s3-run needs --bucket, --access-key and --secret-key (or \
                  BKXPRO_S3_TEST_BUCKET, BKXPRO_S3_TEST_ACCESS_KEY and \
                  BKXPRO_S3_TEST_SECRET_KEY)"
-                    .into(),
-            );
+                .into());
         }
         Ok(config)
     }
@@ -1028,7 +1040,8 @@ fn run_fuzz_command(options: &FuzzOptions) -> Result<bool, String> {
     Ok(report.ok())
 }
 
-fn parse_child_config(items: Vec<String>) -> Result<ChildConfig, String> {    let mut dir = None;
+fn parse_child_config(items: Vec<String>) -> Result<ChildConfig, String> {
+    let mut dir = None;
     let mut seed = 0u64;
     let mut payload_bytes = 1024usize;
     let mut seal_at = 32usize;
@@ -1046,7 +1059,9 @@ fn parse_child_config(items: Vec<String>) -> Result<ChildConfig, String> {    le
             "--max-entries" => max_entries = cursor.parse("--max-entries")?,
             "--step-micros" => step_micros = cursor.parse("--step-micros")?,
             other => {
-                return Err(format!("unknown kill-soak-child argument {other:?}; see --help"))
+                return Err(format!(
+                    "unknown kill-soak-child argument {other:?}; see --help"
+                ))
             }
         }
     }
@@ -1071,7 +1086,7 @@ fn parse_child_config(items: Vec<String>) -> Result<ChildConfig, String> {    le
 fn print_usage() {
     println!(
         "\
-bkxpro-validator - deterministic simulation, kill/soak testing, replay, dashboard (RAN-132)
+bkxpro-validator - deterministic simulation, kill/soak testing, replay, dashboard
 
 USAGE:
   bkxpro-validator sim [--scenario NAME | --all] [--seed N] [--runs N] [--replay]

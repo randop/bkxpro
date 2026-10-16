@@ -1,4 +1,4 @@
-//! Integration tests for the structural fuzzer (RAN-132).
+//! Integration tests for the structural fuzzer.
 //!
 //! Every test is a pure function of fixed seeds, so failures always reproduce;
 //! the nightly job adds random seeds through the CLI (`bkxpro-validator fuzz`).
@@ -136,11 +136,7 @@ fn checked_in_corpus_audits_clean() {
         let path = entry.unwrap().path();
         let bytes = fs::read(&path).unwrap();
         let violations = audit_image(9, &bytes);
-        assert!(
-            violations.is_empty(),
-            "{}: {violations:?}",
-            path.display()
-        );
+        assert!(violations.is_empty(), "{}: {violations:?}", path.display());
         count += 1;
     }
     assert!(count >= 24, "corpus shrank to {count} files");

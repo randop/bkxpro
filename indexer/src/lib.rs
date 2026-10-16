@@ -1,4 +1,4 @@
-//! fjall-backed index and rebuild-from-segments for bkxpro (RAN-129).
+//! fjall-backed index and rebuild-from-segments for bkxpro.
 //!
 //! The index is derived data; segments are the source of truth. This crate provides:
 //! - Three fjall keyspaces: `entries`, `ledgers`, `segments`
@@ -164,7 +164,7 @@ pub struct IndexConfig {
     /// Path to the fjall database directory.
     pub db_path: PathBuf,
     /// Maximum memory budget for fjall cache + write buffers (bytes).
-    /// Example: ~128 MB as specified in RAN-129.
+    /// Example: ~128 MB.
     pub max_memory_bytes: usize,
     /// Maximum number of open files for fjall.
     pub max_open_files: usize,

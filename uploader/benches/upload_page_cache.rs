@@ -1,4 +1,4 @@
-//! Upload I/O must not pollute the page cache (RAN-130 acceptance).
+//! Upload I/O must not pollute the page cache (acceptance criterion).
 //!
 //! Sealed segments are read through the production io_uring adapter with `O_DIRECT` into
 //! budgeted aligned chunks, so the cgroup's page-cache bytes (`memory.stat: file`)
@@ -99,7 +99,7 @@ fn main() {
         .unwrap_or(DEFAULT_READ_CHUNK_MIB)
         .max(1);
 
-    println!("bkxpro uploader page-cache bench (RAN-130)");
+    println!("bkxpro uploader page-cache bench");
     println!("  run dir:   {}", run_dir.display());
     println!(
         "  cgroup:    {} (memory.max: {})",

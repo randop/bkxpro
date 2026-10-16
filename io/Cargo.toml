@@ -3,7 +3,7 @@ name = "bkxpro-io"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Linux io_uring storage adapter, cgroup accounting, and host preflight for bkxpro (RAN-134)"
+description = "Linux io_uring storage adapter, cgroup accounting, and host preflight for bkxpro"
 
 [dependencies]
 bkxpro-segmenter = { path = "../segmenter" }

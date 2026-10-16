@@ -1,5 +1,5 @@
 //! Property-based reference model for the ledger semantics implemented by the
-//! segment codec (RAN-131): append, read, LAC, and the recovery prefix guarantee.
+//! segment codec: append, read, LAC, and the recovery prefix guarantee.
 //!
 //! The model is deliberately trivial: a ledger is an ordered map of
 //! `(ledger, entry) -> payload`, its LAC is the highest entry recovered for a
@@ -22,10 +22,10 @@
 
 use std::collections::BTreeMap;
 
-use bkxpro_validator::DetRng;
 use bkxpro_codec::{
     SegmentEncoder, SegmentHeader, SegmentView, BLOCK_DATA_SIZE, HEADER_SIZE, RECORD_HEADER_SIZE,
 };
+use bkxpro_validator::DetRng;
 use bytes::Bytes;
 use proptest::prelude::*;
 

@@ -1,4 +1,4 @@
-//! Seeded structural fuzzing of the segment parsers (RAN-132).
+//! Seeded structural fuzzing of the segment parsers.
 //!
 //! This is the in-tree fuzzer that runs on every PR: it builds valid segment
 //! images (sealed and open variants) from the seed, applies deterministic
@@ -28,12 +28,12 @@
 
 use std::{collections::BTreeMap, fs, io, path::Path};
 
-use bytes::Bytes;
 use bkxpro_codec::{
     parse_segment_header, AlignedSegmentEncoder, SegmentHeader, SegmentView, TrailerWire,
     BLOCK_DATA_SIZE, BLOCK_SIZE, HEADER_SIZE, RECORD_HEADER_SIZE, TRAILER_SIZE,
 };
 use bkxpro_segmenter::AlignedBuffer;
+use bytes::Bytes;
 use serde::Serialize;
 
 use crate::{lifecycle::Session, rng::DetRng};
@@ -183,7 +183,10 @@ fn tail_expected(source: &[u8], records: &[SourceRecord], fault: TailFault) -> u
             }
         }
     };
-    records.iter().filter(|record| record.end <= surviving).count()
+    records
+        .iter()
+        .filter(|record| record.end <= surviving)
+        .count()
 }
 
 /// Apply up to `layers` non-tail corruptions.
@@ -531,10 +534,7 @@ pub fn write_corpus(root: &Path, seed: u64) -> io::Result<usize> {
     };
     add("valid-sealed.seg", source.sealed.clone());
     add("valid-open.seg", source.open.clone());
-    add(
-        "open-header-only.seg",
-        source.open[..HEADER_SIZE].to_vec(),
-    );
+    add("open-header-only.seg", source.open[..HEADER_SIZE].to_vec());
     add(
         "open-truncated-mid-block.seg",
         source.open[..HEADER_SIZE + BLOCK_SIZE / 2].to_vec(),
@@ -580,7 +580,11 @@ pub fn write_corpus(root: &Path, seed: u64) -> io::Result<usize> {
         let view = SegmentView::recover_open(Bytes::copy_from_slice(&source.open))
             .view
             .expect("source recovers");
-        let first = view.records().next().expect("records").expect("first record");
+        let first = view
+            .records()
+            .next()
+            .expect("records")
+            .expect("first record");
         first.offset as usize
     };
     let record_end = record_offset + RECORD_HEADER_SIZE + source.records[0].len;
@@ -602,7 +606,10 @@ pub fn write_corpus(root: &Path, seed: u64) -> io::Result<usize> {
             "footer_parser/garbage.bin",
             DetRng::new(seed ^ 4).bytes(256),
         ),
-        ("footer_parser/valid-footer.seg", footer_bytes(&source.sealed)),
+        (
+            "footer_parser/valid-footer.seg",
+            footer_bytes(&source.sealed),
+        ),
     ];
     for (name, bytes) in &small {
         let path = root.join(name);
@@ -632,8 +639,9 @@ mod tests {
         let source = build_source(3, 8, 128);
         let sealed = SegmentView::open_sealed(Bytes::copy_from_slice(&source.sealed)).unwrap();
         assert_eq!(sealed.records().count(), 8);
-        let recovered =
-            SegmentView::recover_open(Bytes::copy_from_slice(&source.open)).view.unwrap();
+        let recovered = SegmentView::recover_open(Bytes::copy_from_slice(&source.open))
+            .view
+            .unwrap();
         assert_eq!(
             recovered.records().count(),
             8,

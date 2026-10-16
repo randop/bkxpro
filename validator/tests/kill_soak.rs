@@ -1,4 +1,4 @@
-//! Integration test for the real-process kill soak (RAN-132).
+//! Integration test for the real-process kill soak.
 //!
 //! Drives the `bkxpro-validator` binary (located through `CARGO_BIN_EXE_...`) so the
 //! process that gets `SIGKILL`ed is a real, cargo-built executable writing
@@ -38,13 +38,21 @@ fn sigkill_mid_append_recovers_every_acknowledged_entry() {
         outcome.violations
     );
     assert_eq!(outcome.rounds.len(), 3);
-    assert_eq!(outcome.killed_rounds(), 3, "every round must kill the child");
+    assert_eq!(
+        outcome.killed_rounds(),
+        3,
+        "every round must kill the child"
+    );
     assert!(
         outcome.total_journaled() > 0,
         "no round acknowledged anything; the harness is not exercising the kill window"
     );
     for round in &outcome.rounds {
-        assert!(round.journaled > 0, "round {} journaled nothing", round.round);
+        assert!(
+            round.journaled > 0,
+            "round {} journaled nothing",
+            round.round
+        );
         // The parent only records a round as killed after the first ack and a
         // seeded delay, so there must be at least one recovered record.
         assert!(round.recovered >= round.journaled);
@@ -217,11 +225,11 @@ fn the_child_rotates_when_the_target_fills_before_seal_at() {
     // The child exits between group commits, so its final records may still be
     // buffered and never acknowledged; recovery must surface everything that was
     // acknowledged, and nothing beyond what was attempted (40).
-    let total: usize = segments
-        .iter()
-        .map(|segment| segment.records.len())
-        .sum();
-    assert!(total <= 40, "recovered more records than were appended: {total}");
+    let total: usize = segments.iter().map(|segment| segment.records.len()).sum();
+    assert!(
+        total <= 40,
+        "recovered more records than were appended: {total}"
+    );
     let mut recovered_entries: Vec<u64> = segments
         .iter()
         .flat_map(|segment| segment.records.iter().map(|record| record.entry))

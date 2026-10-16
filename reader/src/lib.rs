@@ -1,4 +1,4 @@
-//! Foyer hybrid read cache and read path for bkxpro (RAN-131).
+//! Foyer hybrid read cache and read path for bkxpro.
 //!
 //! Read path:
 //! 1. Foyer memory tier (in-memory cache).
@@ -189,7 +189,7 @@ pub trait SegmentReader: Send + Sync {
     ) -> Result<Option<SegmentMeta>, ReadCacheError>;
 }
 
-/// Local segment reader using the RAN-134 I/O layer.
+/// Local segment reader using the io_uring I/O layer.
 ///
 /// Local reads are serialized on a dedicated thread. The backend is constructed
 /// there so thread-bound io_uring operations never run on Tokio workers. Requests

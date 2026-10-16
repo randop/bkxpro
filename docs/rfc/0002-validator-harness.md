@@ -1,7 +1,6 @@
 # ADR 0002: Validator harness: simulation, fault injection, fuzzing, soak
 
 - **Status:** Implemented; kernel-fault evidence collected per run (see the runbook).
-- **Issue:** RAN-132.
 - **Scope:** staging tier verification of the writer/index/uploader lifecycle. Not a performance
   harness and not a production service component: it exists to break the durability contract on
   purpose and prove the product notices.
@@ -62,7 +61,7 @@ Conflating them is how storage tests lie:
 `scenarios::run_plan` drives one `plan::preset(name, seed)` through the real writer, index, and
 uploader code paths against two deterministic stand-ins:
 
-- **`io::simulated`** behind `sim_io::SharedSimIo` (RAN-134's deterministic backend): disk faults
+- **`io::simulated`** behind `sim_io::SharedSimIo` (the deterministic backend): disk faults
   (`FailWrite`, `Eagain`, `Enospc`, torn writes, byte-flip corruption, `FailSync`, slow syncs,
   failed truncates, directory-sync failures, failed acquires, stale reads) armed at chosen appends
   or on the device, plus power-cut and crash semantics.

@@ -1,8 +1,8 @@
-# bkxpro-io (RAN-134)
+# bkxpro-io
 
-Linux-only host preflight and production `SegmentIo` backend for RAN-127. The crate does not provide a buffered or `pwrite` fallback. Non-Linux builds fail with a clear compile-time error.
+Linux-only host preflight and production `SegmentIo` backend. The crate does not provide a buffered or `pwrite` fallback. Non-Linux builds fail with a clear compile-time error.
 
-`cgroup::MemoryCgroup` also lives here: it resolves the process cgroup v2 from `/proc/self/cgroup` and `/proc/self/mountinfo` and reads `memory.current`, `memory.max` (including finite ancestors), and `memory.events`. The host preflight uses it to require a finite cap; the RAN-130 and RAN-131 memory benchmarks use it to measure their RSS and page-cache budgets.
+`cgroup::MemoryCgroup` also lives here: it resolves the process cgroup v2 from `/proc/self/cgroup` and `/proc/self/mountinfo` and reads `memory.current`, `memory.max` (including finite ancestors), and `memory.events`. The host preflight uses it to require a finite cap; the memory benchmarks use it to measure their RSS and page-cache budgets.
 
 ## Runtime decision
 

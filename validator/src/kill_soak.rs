@@ -34,9 +34,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::Bytes;
 use bkxpro_codec::{AlignedSegmentEncoder, SegmentView};
 use bkxpro_segmenter::{AlignedBuffer, SegmentWriter, WriterConfig, WriterError};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -434,7 +434,9 @@ pub fn verify_recovery(
     for segment in segments {
         let mut seen = BTreeSet::new();
         for record in &segment.records {
-            *occurrences.entry((record.ledger, record.entry)).or_default() += 1;
+            *occurrences
+                .entry((record.ledger, record.entry))
+                .or_default() += 1;
             if !seen.insert((record.ledger, record.entry)) {
                 violations.push(format!(
                     "segment {} surfaced ledger {} entry {} twice",
@@ -470,7 +472,9 @@ pub fn verify_recovery(
                     .iter()
                     .map(move |record| (segment.segment_id, record))
             })
-            .find(|(_, record)| record.ledger == journaled.ledger && record.entry == journaled.entry);
+            .find(|(_, record)| {
+                record.ledger == journaled.ledger && record.entry == journaled.entry
+            });
         match found {
             None => violations.push(format!(
                 "acknowledged entry lost: segment {} ledger {} entry {}",
@@ -529,7 +533,11 @@ pub struct KillSoakConfig {
 }
 
 impl KillSoakConfig {
-    pub fn new(child_exe: impl Into<PathBuf>, work_root: impl Into<PathBuf>, base_seed: u64) -> Self {
+    pub fn new(
+        child_exe: impl Into<PathBuf>,
+        work_root: impl Into<PathBuf>,
+        base_seed: u64,
+    ) -> Self {
         Self {
             child_exe: child_exe.into(),
             work_root: work_root.into(),
@@ -863,7 +871,10 @@ mod tests {
         let segments = vec![RecoveredSegment {
             segment_id: 0,
             kind: RecoveredKind::Open,
-            records: vec![recovered_record(seed, 1, 1, 16), recovered_record(seed, 2, 2, 16)],
+            records: vec![
+                recovered_record(seed, 1, 1, 16),
+                recovered_record(seed, 2, 2, 16),
+            ],
         }];
         let journal = vec![journal_entry(0, 1, 1, 16)];
         assert!(verify_recovery(seed, &journal, &segments).is_empty());
@@ -880,7 +891,10 @@ mod tests {
         let journal = vec![journal_entry(0, 1, 1, 8), journal_entry(0, 2, 2, 8)];
         let violations = verify_recovery(seed, &journal, &segments);
         assert_eq!(violations.len(), 1);
-        assert!(violations[0].contains("acknowledged entry lost"), "{violations:?}");
+        assert!(
+            violations[0].contains("acknowledged entry lost"),
+            "{violations:?}"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Streaming S3 uploader with manifest-gated segment deletion (RAN-130).
+//! Streaming S3 uploader with manifest-gated segment deletion.
 //!
 //! Sealed segments move to the object store as one PUT each (multipart for large
 //! files) and are removed from local disk only after two durable facts are

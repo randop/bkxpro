@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RAN-132 kernel-level fault validation for bkxpro.
+# Kernel-level fault validation for bkxpro.
 #
 # Runs the kill-soak child writer against real XFS/ext4 filesystems layered on
 # kernel fault targets, then recovers the session with `bkxpro-validator verify`

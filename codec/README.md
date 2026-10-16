@@ -1,6 +1,6 @@
-# bkxpro codec — RAN-126
+# bkxpro codec
 
-A standalone codec crate for the on-disk segment and S3 batch-object format. It deliberately stops at serialization, parsing, sealed-footer validation, and open-segment recovery; aligned file I/O, group commit, fjall, S3 upload, and cache integration belong to downstream tasks. The format remains portable for offline inspection and fuzzing; Linux host preflight, device-specific DIO alignment, buffer registration, and io_uring I/O belong to RAN-134/RAN-127.
+A standalone codec crate for the on-disk segment and S3 batch-object format. It deliberately stops at serialization, parsing, sealed-footer validation, and open-segment recovery; aligned file I/O, group commit, fjall, S3 upload, and cache integration belong to downstream tasks. The format remains portable for offline inspection and fuzzing; Linux host preflight, device-specific DIO alignment, buffer registration, and io_uring I/O belong to the downstream I/O layer and segment writer.
 
 ## Wire-format specification (version 1)
 

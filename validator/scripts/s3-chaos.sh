@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RAN-132 real-endpoint S3 chaos validation for bkxpro.
+# Real-endpoint S3 chaos validation for bkxpro.
 #
 # Drives `bkxpro-validator s3-run` - the full lifecycle against a live
 # S3-compatible endpoint (write, seal, restart, multipart PUT, manifest CAS,

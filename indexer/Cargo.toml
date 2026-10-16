@@ -3,7 +3,7 @@ name = "bkxpro-indexer"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "fjall-backed index and rebuild-from-segments for bkxpro (RAN-129)"
+description = "fjall-backed index and rebuild-from-segments for bkxpro"
 
 [dependencies]
 bkxpro-codec = { path = "../codec" }

@@ -1,4 +1,4 @@
-//! Fixed-format segment, block, record, and footer codec for bkxpro (RAN-126).
+//! Fixed-format segment, block, record, and footer codec for bkxpro.
 //!
 //! Payload bytes are copied once into the output segment during encoding. Decoding
 //! borrows the segment through `bytes::Bytes`; `RecordRef::payload_chunks` yields
@@ -291,8 +291,8 @@ fn align_up(value: usize, alignment: usize) -> Result<usize, CodecError> {
 }
 
 /// True when the buffer starts at a 4 KiB boundary and its length is a multiple
-/// of 4 KiB. This checks memory geometry only; RAN-134 performs host/device DIO
-/// capability preflight and RAN-127 owns io_uring registration and I/O.
+/// of 4 KiB. This checks memory geometry only; the io layer performs host/device
+/// DIO capability preflight and owns io_uring registration and I/O.
 pub fn is_4k_aligned_buffer(buffer: &[u8]) -> bool {
     (buffer.as_ptr() as usize) % BLOCK_SIZE == 0 && buffer.len() % BLOCK_SIZE == 0
 }
@@ -1124,7 +1124,7 @@ impl<'a> Iterator for RecordIter<'a> {
 }
 
 /// Build a segment in memory. This is a codec/buffer abstraction, not the aligned
-/// O_DIRECT writer; RAN-127 owns filesystem durability and group commit.
+/// O_DIRECT writer; the segment writer owns filesystem durability and group commit.
 pub struct SegmentEncoder {
     header: SegmentHeader,
     output: Vec<u8>,
@@ -1358,7 +1358,7 @@ impl SegmentEncoder {
 ///
 /// The caller must provide enough capacity for the complete segment and retain the
 /// storage until writes submitted against it have completed. Buffer registration and
-/// asynchronous I/O ownership remain the responsibility of RAN-127.
+/// asynchronous I/O ownership remain the responsibility of the segment writer.
 pub struct AlignedSegmentEncoder<'a> {
     output: &'a mut [u8],
     header: SegmentHeader,
@@ -1472,7 +1472,7 @@ impl<'a> AlignedSegmentEncoder<'a> {
     }
 
     /// Finalize the currently open data block, if any, and return its byte offset.
-    /// No I/O is performed; RAN-127 submits this block through its I/O backend.
+    /// No I/O is performed; the segment writer submits this block through its I/O backend.
     pub fn flush_pending_data_block(&mut self) -> Result<Option<usize>, CodecError> {
         if self.used_len == 0 && self.record_count == 0 {
             return Ok(None);

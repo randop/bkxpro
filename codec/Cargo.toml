@@ -3,7 +3,7 @@ name = "bkxpro-codec"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "BookKeeper-style staging segment codec for RAN-126"
+description = "BookKeeper-style staging segment codec"
 
 [dependencies]
 bytes = "1.10"
