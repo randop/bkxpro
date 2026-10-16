@@ -37,12 +37,11 @@ use bkxpro_codec::{
     AlignedSegmentEncoder, CodecError, SegmentEncoder, SegmentHeader, SegmentView, TrailerWire,
     BLOCK_SIZE, HEADER_SIZE, RECORD_HEADER_SIZE, TRAILER_SIZE,
 };
-use bkxpro_index::{
+use bkxpro_indexer::{
     EntryLocation, Index, IndexConfig, IndexError, SegmentMeta, SegmentState,
 };
-use bkxpro_io::simulated::{SimulatedCounters, SimulatedFault};
-use bkxpro_read_cache::SegmentReader;
-use bkxpro_segment_writer::{
+use bkxpro_reader::SegmentReader;
+use bkxpro_segmenter::{
     AlignedBuffer, SegmentIo, SegmentWriter, WriterConfig, WriteOp,
 };
 use bkxpro_uploader::{
@@ -59,7 +58,7 @@ use crate::{
     mock_s3::{MockS3, MANIFEST_KEY},
     plan::{DiskFault, FaultArm, Plan},
     rng::DetRng,
-    sim_io::{trace_file_label, SharedSimIo},
+    sim_io::{trace_file_label, SharedSimIo, SimulatedCounters, SimulatedFault},
     trace::{Trace, TraceEvent},
 };
 
@@ -628,6 +627,11 @@ impl Session {
     pub fn restart(&mut self) -> Result<RestartReport, HarnessError> {
         self.stop_background_uploader();
         self.uploader = None;
+        if let Some(mock) = &self.mock {
+            // A fresh process: the dead-process flag and the kill schedule of
+            // the previous life must not carry over.
+            mock.clear_crash();
+        }
         let index = self.index.take().expect("index is open");
         debug_assert_eq!(
             Arc::strong_count(&index),
@@ -636,6 +640,11 @@ impl Session {
         );
         drop(index);
         std::fs::remove_dir_all(&self.index_dir)?;
+
+        // A segment created but never brought to a valid first commit (all-zero
+        // preallocation) cannot be recovered by the index rebuild: it never
+        // acknowledged a record, so it must be reconciled before the scan.
+        self.remove_zero_preallocations()?;
 
         let mut index = Index::open(self.index_config())?;
         let mut io = self.sim.clone();
@@ -653,6 +662,34 @@ impl Session {
             entries_indexed: rebuild.entries_indexed,
             repairs,
         })
+    }
+
+    /// Unlink preallocated segment shells that never received a durable header
+    /// block (a crash or a failed create before the first commit). The index
+    /// rebuild refuses headerless open segments, and no record can have been
+    /// acknowledged through one, so they are removed instead of "recovered".
+    /// This mirrors the all-zero branch of [`Session::repair_open_segments`],
+    /// which cannot run first because the rebuild would fail before it.
+    fn remove_zero_preallocations(&self) -> Result<(), HarnessError> {
+        let io = self.sim.clone();
+        for path in self.sim.published_paths() {
+            if path.extension().and_then(|extension| extension.to_str()) != Some("seg") {
+                continue;
+            }
+            let Some(image) = self.sim.visible_bytes(&path) else {
+                continue;
+            };
+            if image.is_empty()
+                || image.len() % BLOCK_SIZE != 0
+                || !image.iter().all(|byte| *byte == 0)
+            {
+                continue;
+            }
+            // A headerless all-zero shell: unlink it. No meta can exist for it
+            // because the derived index was wiped just above.
+            io.unlink_orphan(&path, &self.data_dir)?;
+        }
+        Ok(())
     }
 
     /// Re-seal every segment that has no valid trailer (an open segment left by a
@@ -837,10 +874,26 @@ impl Session {
     }
 
     /// One `process_pending` pass over the index.
-    pub fn upload_pass(&mut self) -> Result<UploadReport, HarnessError> {
-        self.ensure_uploader()?;
+    ///
+    /// When the mock's kill point fires mid-pass, the pass fails with the
+    /// per-segment error, whose detail names the simulated process death, so the
+    /// first life never looks like a clean pass. The crash flag is re-checked
+    /// afterwards so a death can never be mistaken for success either, exactly
+    /// like the killed production process would show up.
+    pub fn upload_pass(&mut self) -> Result<UploadReport, (UploadReport, HarnessError)> {
+        self.ensure_uploader()
+            .map_err(|error| (UploadReport::default(), error))?;
         let uploader = self.uploader.as_ref().expect("uploader just built");
-        let report = self.runtime.block_on(uploader.process_pending())?;
+        let report = self
+            .runtime
+            .block_on(uploader.process_pending())
+            .map_err(|(report, error)| (report, error.into()))?;
+        if let Some(reason) = self.mock_opt().and_then(|mock| mock.crash_reason()) {
+            return Err((
+                report,
+                HarnessError::Message(format!("simulated process death: {reason}")),
+            ));
+        }
         Ok(report)
     }
 
@@ -853,7 +906,8 @@ impl Session {
     }
 
     /// Drive upload passes until nothing is left or the pass budget is exhausted.
-    /// Transient failures (chaos) do not end the loop; a poisoned uploader does.
+    /// Transient failures (chaos) do not end the loop; a poisoned uploader, a
+    /// simulated process death, and the pass budget do.
     pub fn drive_uploads(&mut self, max_passes: u32) -> Result<UploadSummary, HarnessError> {
         let mut summary = UploadSummary::default();
         for _ in 0..max_passes {
@@ -870,19 +924,32 @@ impl Session {
                         break;
                     }
                     if report.pending > 0 {
+                        // Transient chaos (an outage window, a lost response)
+                        // leaves segments pending; the settle loop retries until
+                        // the budget runs out instead of giving up after one
+                        // unlucky pass.
                         summary.last_error = Some(format!(
-                            "{} segments still pending after a full pass",
+                            "{} segments still pending after a pass",
                             report.pending
                         ));
-                        break;
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
                     }
                 }
-                Err(error) => {
+                Err((report, error)) => {
+                    summary.uploaded += report.uploaded;
+                    summary.already_remote += report.already_remote;
+                    summary.already_deleted += report.already_deleted;
+                    summary.pending = report.pending;
+                    summary.examined = report.examined;
                     self.note_upload_error(&error);
                     let poisoned = self.uploader_poisoned();
+                    let crashed = self
+                        .mock_opt()
+                        .is_some_and(|mock| mock.crash_reason().is_some());
                     summary.last_error = Some(error.to_string());
                     summary.passes += 1;
-                    if poisoned {
+                    if poisoned || crashed {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(1));
@@ -965,8 +1032,8 @@ impl Session {
             Arc::clone(&index),
         ));
         let fallback = FallbackSegmentReader::new(
-            Arc::clone(&local) as Arc<dyn bkxpro_read_cache::SegmentReader>,
-            Arc::clone(&remote) as Arc<dyn bkxpro_read_cache::SegmentReader>,
+            Arc::clone(&local) as Arc<dyn bkxpro_reader::SegmentReader>,
+            Arc::clone(&remote) as Arc<dyn bkxpro_reader::SegmentReader>,
         );
 
         let mut report = ReadBackReport::default();
@@ -1096,7 +1163,7 @@ impl Session {
                 ));
                 continue;
             };
-            let expected_key = self.config.uploader.segment_key(*segment_id);
+            let expected_key = self.config.uploader.segment_key(*segment_id, *epoch);
             if row.key != expected_key {
                 report.failures.push(format!(
                     "segment {segment_id}: manifest row key {} does not match {expected_key}",

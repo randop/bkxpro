@@ -225,6 +225,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "bkxpro-validator"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bkxpro-codec",
+ "bkxpro-indexer",
+ "bkxpro-io",
+ "bkxpro-reader",
+ "bkxpro-segmenter",
+ "bkxpro-uploader",
+ "bytes",
+ "crc32c",
+ "libc",
+ "object_store",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

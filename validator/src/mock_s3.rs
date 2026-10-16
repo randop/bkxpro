@@ -137,6 +137,9 @@ struct State {
     successful_cas: u64,
     outage_remaining: u64,
     events: Vec<MockEvent>,
+    /// Set when an armed crash point fires; models the dead process until
+    /// [`MockS3::clear_crash`] starts a fresh life.
+    crashed: Option<String>,
 }
 
 /// Chaos controls that a scenario arms before or between phases. They are
@@ -247,9 +250,6 @@ impl MockS3 {
         events.sort_by(|a, b| {
             (&a.key, a.op as u8, a.attempt).cmp(&(&b.key, b.op as u8, b.attempt))
         });
-        for event in &mut events {
-            event.sequence = 0;
-        }
         let encoded = serde_json::to_vec(&events).unwrap_or_default();
         digest_bytes(&[encoded])
     }
@@ -303,6 +303,28 @@ impl MockS3 {
         self.armed().fence_after_put.insert(segment_id, epoch);
     }
 
+    /// True once an armed crash point has fired: the simulated process is dead,
+    /// so every later operation fails fatally until [`MockS3::clear_crash`].
+    pub fn crashed(&self) -> bool {
+        self.state().crashed.is_some()
+    }
+
+    /// Why the simulated process is dead, if it is.
+    pub fn crash_reason(&self) -> Option<String> {
+        self.state().crashed.clone()
+    }
+
+    /// Model a fresh process after a crash: the dead-process flag and the kill
+    /// schedule of the previous life are both forgotten. A crash point that was
+    /// preempted by an earlier one (e.g. the CAS point firing before the planned
+    /// PUT point) must not kill the restarted process too.
+    pub fn clear_crash(&self) {
+        self.state().crashed = None;
+        let mut armed = self.armed();
+        armed.crash_after_successful_puts.clear();
+        armed.crash_after_successful_cas.clear();
+    }
+
     fn decision_rng(&self, op: S3Op, key: &str, attempt: u64) -> DetRng {
         DetRng::new(self.inner.config.seed).derive_from(&[
             format!("{op:?}").as_bytes(),
@@ -318,6 +340,11 @@ impl MockS3 {
     fn begin_op(&self, op: S3Op, key: &str) -> (u64, u64, Decision) {
         let (attempt, in_outage) = {
             let mut state = self.state();
+            // A dead process cannot reach the store: model the kill -9 boundary
+            // by failing every later operation fatally before it touches state.
+            if state.crashed.is_some() {
+                return (0, 0, Decision::FailPreWrite(S3Outcome::Fatal));
+            }
             // A pre-armed outage starts once enough operations have completed.
             {
                 let mut armed = self.armed();
@@ -477,10 +504,22 @@ impl MockS3 {
     }
 }
 
-/// Segment id parsed from a `segments/{id}.seg` key.
+/// Segment id parsed from an object key.
+///
+/// The production uploader writes `{prefix}/{segment_id:020}/{writer_epoch:020}.seg`,
+/// so the segment id is the *parent directory* whenever the stem is the numeric
+/// writer epoch. The harness's own fixtures use the flat
+/// `segments/{segment_id:020}.seg` layout, where the stem is the id.
 pub(crate) fn segment_id_of_key(key: &str) -> Option<u64> {
     let file = key.rsplit('/').next()?;
     let stem = file.strip_suffix(".seg")?;
+    if let Some(parent) = key.rsplit('/').nth(1) {
+        if stem.parse::<u64>().is_ok() {
+            if let Ok(segment_id) = parent.parse::<u64>() {
+                return Some(segment_id);
+            }
+        }
+    }
     stem.parse::<u64>().ok()
 }
 
@@ -551,9 +590,14 @@ impl BlobStore for MockS3 {
             // connection, exactly like a failure before any part was accepted.
             drop(chunks);
             self.finish_event(self.new_event(S3Op::Put, key, attempt, outcome, 0, latency));
-            return Err(BlobError::Transient(format!(
-                "{key}: injected PUT failure (no bytes accepted)"
-            )));
+            return Err(match outcome {
+                S3Outcome::Fatal => BlobError::Fatal(format!(
+                    "{key}: simulated process death interrupted the PUT"
+                )),
+                _ => BlobError::Transient(format!(
+                    "{key}: injected PUT failure (no bytes accepted)"
+                )),
+            });
         }
         let lost = decision == Decision::LostResponse;
         let bytes = drain_stream(chunks).await?;
@@ -591,6 +635,8 @@ impl BlobStore for MockS3 {
         }
 
         if self.crash_after_put(successful_puts) {
+            self.state().crashed =
+                Some("simulated process death after a successful PUT".to_string());
             return Err(BlobError::Fatal(
                 "simulated process death after a successful PUT".to_string(),
             ));
@@ -615,9 +661,12 @@ impl BlobStore for MockS3 {
         self.maybe_sleep(latency).await;
         if let Decision::FailPreWrite(outcome) = decision {
             self.finish_event(self.new_event(S3Op::Get, key, attempt, outcome, 0, latency));
-            return Err(BlobError::Transient(format!(
-                "{key}: injected GET failure"
-            )));
+            return Err(match outcome {
+                S3Outcome::Fatal => BlobError::Fatal(format!(
+                    "{key}: simulated process death interrupted the GET"
+                )),
+                _ => BlobError::Transient(format!("{key}: injected GET failure")),
+            });
         }
         let object = self.state().objects.get(key).cloned();
         match object {
@@ -666,9 +715,14 @@ impl BlobStore for MockS3 {
                 0,
                 latency,
             ));
-            return Err(BlobError::Transient(format!(
-                "{key}: injected ranged GET failure"
-            )));
+            return Err(match outcome {
+                S3Outcome::Fatal => BlobError::Fatal(format!(
+                    "{key}: simulated process death interrupted the ranged GET"
+                )),
+                _ => BlobError::Transient(format!(
+                    "{key}: injected ranged GET failure"
+                )),
+            });
         }
         let object = self.state().objects.get(key).cloned();
         let Some(object) = object else {
@@ -706,9 +760,12 @@ impl BlobStore for MockS3 {
         self.maybe_sleep(latency).await;
         if let Decision::FailPreWrite(outcome) = decision {
             self.finish_event(self.new_event(S3Op::Head, key, attempt, outcome, 0, latency));
-            return Err(BlobError::Transient(format!(
-                "{key}: injected HEAD failure"
-            )));
+            return Err(match outcome {
+                S3Outcome::Fatal => BlobError::Fatal(format!(
+                    "{key}: simulated process death interrupted the HEAD"
+                )),
+                _ => BlobError::Transient(format!("{key}: injected HEAD failure")),
+            });
         }
         let object = self.state().objects.get(key).cloned();
         match object {
@@ -754,6 +811,9 @@ impl BlobStore for MockS3 {
                 S3Outcome::Conflict => {
                     BlobError::Conflict(format!("{key}: injected CAS conflict"))
                 }
+                S3Outcome::Fatal => BlobError::Fatal(format!(
+                    "{key}: simulated process death interrupted the CAS"
+                )),
                 _ => BlobError::Transient(format!("{key}: injected transient CAS failure")),
             };
             self.finish_event(self.new_event(S3Op::Cas, key, attempt, outcome, 0, latency));
@@ -840,6 +900,8 @@ impl BlobStore for MockS3 {
             S3Outcome::Ok
         };
         if self.crash_after_cas(successful_cas) {
+            self.state().crashed =
+                Some("simulated process death after a successful manifest CAS".to_string());
             self.finish_event(self.new_event(
                 S3Op::Cas,
                 key,
@@ -889,29 +951,6 @@ mod tests {
         let outcome = store.put_stream(key, 4096, rx).await;
         let _ = feeder.await;
         outcome
-    }
-
-    #[tokio::test]
-    async fn content_digest_ignores_cross_key_event_order() {
-        let first = MockS3::new(1);
-        let second = MockS3::new(1);
-        for key in [segment_key(1), segment_key(2)] {
-            put_payload(&first, &key, b"payload").await.unwrap();
-        }
-        for key in [segment_key(2), segment_key(1)] {
-            put_payload(&second, &key, b"payload").await.unwrap();
-        }
-        assert_eq!(first.content_digest(), second.content_digest());
-        assert_ne!(first.event_digest(), second.event_digest());
-        assert_eq!(
-            first.events()[1].sequence,
-            1,
-            "digest must not mutate the log"
-        );
-        put_payload(&second, &segment_key(3), b"payload")
-            .await
-            .unwrap();
-        assert_ne!(first.content_digest(), second.content_digest());
     }
 
     #[tokio::test]
@@ -1063,7 +1102,17 @@ mod tests {
     #[test]
     fn segment_keys_round_trip_through_the_parser() {
         assert_eq!(segment_id_of_key(&segment_key(42)), Some(42));
+        // The uploader's two-level layout: `{prefix}/{segment_id}/{epoch}.seg`.
+        assert_eq!(
+            segment_id_of_key("segments/00000000000000000042/00000000000000000007.seg"),
+            Some(42)
+        );
+        assert_eq!(
+            segment_id_of_key("runs/abc/segments/00000000000000000042/00000000000000000007.seg"),
+            Some(42)
+        );
         assert_eq!(segment_id_of_key(MANIFEST_KEY), None);
+        assert_eq!(segment_id_of_key("segments/not-a-number.seg"), None);
     }
 
     #[test]

@@ -255,7 +255,8 @@ pub fn run_real_s3(config: &RealS3Config) -> Result<RealS3Report, HarnessError> 
                     ));
                 }
             }
-            Err(error) => {
+            Err((report, error)) => {
+                uploaded += report.uploaded;
                 session.note_upload_error(&error);
                 if session.uploader_poisoned() {
                     violations.push(format!("uploader poisoned: {error}"));

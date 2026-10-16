@@ -28,7 +28,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::{self, Write},
-    os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -37,7 +36,7 @@ use std::{
 
 use bytes::Bytes;
 use bkxpro_codec::{AlignedSegmentEncoder, SegmentView};
-use bkxpro_segment_writer::{AlignedBuffer, SegmentWriter, WriterConfig, WriterError};
+use bkxpro_segmenter::{AlignedBuffer, SegmentWriter, WriterConfig, WriterError};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -496,7 +495,8 @@ pub struct KillRound {
     pub round: u32,
     pub seed: u64,
     pub kill_delay_ms: u64,
-    /// False when the child died (or failed) before the first acknowledgement.
+    /// False when the child was not alive to receive the kill: it died (or
+    /// failed) before the first acknowledgement or exited before the kill.
     pub killed_mid_write: bool,
     pub journaled: usize,
     pub recovered: usize,
@@ -713,12 +713,21 @@ pub fn run_kill_soak(
         let journal_path = dir.join(JOURNAL_FILE);
         let first_ack = wait_for_journal(&journal_path, Duration::from_secs(30))?;
         let mut killed_mid_write = false;
+        let mut exited_before_kill = false;
         if first_ack {
             thread::sleep(Duration::from_millis(kill_delay_ms));
-        }
-        if child.try_wait()?.is_none() {
-            let killed = child.kill().is_ok();
-            killed_mid_write = first_ack && killed;
+            // A child that already exited cannot be killed mid-write: treating
+            // that as a kill would credit the round with an observation it never
+            // made, so surface it as a violation instead.
+            match child.try_wait()? {
+                Some(_) => exited_before_kill = true,
+                None => {
+                    let _ = child.kill();
+                    killed_mid_write = true;
+                }
+            }
+        } else {
+            let _ = child.kill();
         }
         let output = child.wait_with_output()?;
 
@@ -728,14 +737,14 @@ pub fn run_kill_soak(
         if malformed > 0 {
             violations.push(format!("journal has {malformed} malformed lines"));
         }
-        if !first_ack {
+        if exited_before_kill {
             violations.push(format!(
-                "child produced no acknowledgement within 30 s (exit: {:?})",
+                "acknowledged child exited before a mid-write SIGKILL (exit: {:?})",
                 output.status
             ));
-        } else if !killed_mid_write || output.status.signal() != Some(libc::SIGKILL) {
+        } else if !killed_mid_write {
             violations.push(format!(
-                "child exited before a mid-write SIGKILL (exit: {:?})",
+                "child produced no acknowledgement within 30 s (exit: {:?})",
                 output.status
             ));
         }

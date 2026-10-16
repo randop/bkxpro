@@ -124,14 +124,14 @@ pub fn run_soak(
     on_scenario: impl FnMut(&RunReport),
     on_kill: impl FnMut(&KillRound),
 ) -> io::Result<SoakReport> {
-    run_soak_with_runner(config, on_scenario, on_kill, run_plan)
+    run_soak_with(config, on_scenario, on_kill, run_plan)
 }
 
-fn run_soak_with_runner(
+fn run_soak_with(
     config: &SoakConfig,
     mut on_scenario: impl FnMut(&RunReport),
     mut on_kill: impl FnMut(&KillRound),
-    mut run: impl FnMut(&Plan) -> Result<RunReport, HarnessError>,
+    mut run_plan: impl FnMut(&Plan) -> Result<RunReport, HarnessError>,
 ) -> io::Result<SoakReport> {
     let started = Instant::now();
     let mut monitor = ResourceMonitor::new(config.rss_limit_bytes, config.fd_limit);
@@ -180,7 +180,8 @@ fn run_soak_with_runner(
             }
         };
 
-        match run(&plan) {
+        let run_started = Instant::now();
+        match run_plan(&plan) {
             Ok(run_report) => {
                 if !run_report.ok {
                     report.failures += 1;
@@ -204,19 +205,27 @@ fn run_soak_with_runner(
                 report.violations.push(format!(
                     "run {run_index} ({scenario_name} seed {seed}): harness error: {error}"
                 ));
-                let failed_run = RunReport {
+                if let Some(incidents) = &config.incidents {
+                    report.incidents.push(write_harness_incident(
+                        incidents,
+                        &scenario_name,
+                        seed,
+                        &error.to_string(),
+                    )?);
+                }
+                let run_report = RunReport {
                     scenario: plan.name.clone(),
                     seed,
                     kind: plan.kind,
                     plan_fingerprint: plan.fingerprint(),
                     ok: false,
                     violations: vec![format!("harness error: {error}")],
-                    notes: Vec::new(),
-                    steps: Vec::new(),
+                    notes: vec![],
+                    steps: vec![],
                     restarts: 0,
-                    repairs: Vec::new(),
-                    uploads: Vec::new(),
-                    read_backs: Vec::new(),
+                    repairs: vec![],
+                    uploads: vec![],
+                    read_backs: vec![],
                     remote_verify: Default::default(),
                     uploader_poisoned: false,
                     uploader_stats: None,
@@ -228,20 +237,12 @@ fn run_soak_with_runner(
                     mock_event_digest: 0,
                     mock_content_digest: 0,
                     replay: plan.replay_command(),
-                    duration_ms: 0,
+                    duration_ms: run_started.elapsed().as_millis() as u64,
                 };
                 if let Some(log) = &config.log {
-                    append_run_log(log, &failed_run)?;
+                    append_run_log(log, &run_report)?;
                 }
-                on_scenario(&failed_run);
-                if let Some(incidents) = &config.incidents {
-                    report.incidents.push(write_harness_incident(
-                        incidents,
-                        &scenario_name,
-                        seed,
-                        &error.to_string(),
-                    )?);
-                }
+                on_scenario(&run_report);
             }
         }
         *report
@@ -258,9 +259,16 @@ fn run_soak_with_runner(
                 one_round.base_seed = DetRng::new(config.base_seed)
                     .derive_from(&[b"soak-kill", &report.kill_rounds.to_le_bytes()])
                     .next_u64();
-                let outcome = run_kill_soak(&one_round, &mut on_kill)?;
+                let base_round = report.kill_rounds;
+                // One soak slot drives exactly one child round, so the child's
+                // per-invocation `round` index is always 0: relabel it with the
+                // soak-wide round number before the progress callback sees it.
+                let outcome = run_kill_soak(&one_round, |_| {})?;
                 report.kill_rounds += outcome.rounds.len() as u64;
-                for round in &outcome.rounds {
+                for (offset, round) in outcome.rounds.iter().enumerate() {
+                    let mut labeled = round.clone();
+                    labeled.round = (base_round + offset as u64) as u32;
+                    on_kill(&labeled);
                     report.kill_violations.extend(round.violations.iter().cloned());
                 }
             }
@@ -348,48 +356,61 @@ mod tests {
     }
 
     #[test]
-    fn harness_errors_are_logged_and_resume_keeps_seed_and_scenario_rotation() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let log = dir.path().join("runs.jsonl");
-        let mut config = SoakConfig::new(11, Duration::from_secs(30));
-        config.scenarios = vec!["smoke".into(), "power-cut".into()];
-        config.log = Some(log.clone());
-        config.max_runs = Some(1);
-        let report = run_soak_with_runner(
-            &config,
-            |_| {},
-            |_| {},
-            |_| Err(HarnessError::Message("injected harness failure".into())),
-        )
-        .unwrap();
-        assert_eq!(report.failures, 1);
-        assert_eq!(logged_run_count(&log).unwrap(), 1);
-        let failed: RunReport =
-            serde_json::from_str(std::fs::read_to_string(&log).unwrap().trim()).unwrap();
-        assert!(!failed.ok);
-        assert!(failed.violations[0].contains("injected harness failure"));
-        let dashboard = crate::report::dashboard(&log).unwrap();
-        assert_eq!(dashboard.total_runs(), 1);
-        assert_eq!(dashboard.total_failures(), 1);
+    fn harness_failures_are_logged_reported_and_advance_resume() {
+        for with_incidents in [false, true] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let log = dir.path().join("runs.jsonl");
+            let mut config = SoakConfig::new(11, Duration::from_secs(30));
+            config.scenarios = vec!["smoke".to_string()];
+            config.max_runs = Some(1);
+            config.log = Some(log.clone());
+            config.incidents = with_incidents.then(|| dir.path().join("incidents"));
+            let mut observed = Vec::new();
+            let report = run_soak_with(
+                &config,
+                |run| observed.push(run.clone()),
+                |_| {},
+                |_| Err(HarnessError::Message("injected failure".into())),
+            )
+            .unwrap();
+            assert_eq!(report.runs, 1);
+            assert_eq!(report.failures, 1);
+            assert!(!report.ok());
+            assert_eq!(report.scenario_runs.get("smoke"), Some(&1));
+            assert_eq!(observed.len(), 1);
+            assert!(!observed[0].ok);
+            assert_eq!(
+                observed[0].violations,
+                vec!["harness error: injected failure"]
+            );
+            assert_eq!(logged_run_count(&log).unwrap(), 1);
+            let logged: RunReport =
+                serde_json::from_str(std::fs::read_to_string(&log).unwrap().trim()).unwrap();
+            let plan = preset("smoke", logged.seed).unwrap();
+            assert_eq!(logged.seed, observed[0].seed);
+            assert_eq!(logged.plan_fingerprint, plan.fingerprint());
+            assert_eq!(logged.replay, plan.replay_command());
+            assert_eq!(logged.violations, observed[0].violations);
+            assert_eq!(report.incidents.len(), usize::from(with_incidents));
+            if with_incidents {
+                let repro = std::fs::read_to_string(report.incidents[0].join("repro.md")).unwrap();
+                assert!(repro.contains("injected failure"));
+                assert!(repro.contains(&format!("seed: {}", logged.seed)));
+            }
 
-        config.resume = true;
-        config.max_runs = Some(2);
-        let mut resumed = Vec::new();
-        let report = run_soak_with_runner(
-            &config,
-            |run| resumed.push(run.clone()),
-            |_| {},
-            |_| Err(HarnessError::Message("another failure".into())),
-        )
-        .unwrap();
-        assert_eq!(report.runs, 1);
-        assert_eq!(resumed[0].scenario, "power-cut");
-        let expected_seed = DetRng::new(11)
-            .derive_from(&[b"soak-run", &1u64.to_le_bytes()])
-            .next_u64();
-        assert_eq!(resumed[0].seed, expected_seed);
-        assert_ne!(resumed[0].seed, failed.seed);
-        assert_eq!(logged_run_count(&log).unwrap(), 2);
+            config.resume = true;
+            config.max_runs = Some(2);
+            let mut resumed_seeds = Vec::new();
+            let resumed = run_soak(&config, |run| resumed_seeds.push(run.seed), |_| {}).unwrap();
+            assert_eq!(resumed.runs, 1);
+            assert_eq!(resumed.failures, 0);
+            assert_eq!(logged_run_count(&log).unwrap(), 2);
+            let expected = DetRng::new(config.base_seed)
+                .derive_from(&[b"soak-run", &1u64.to_le_bytes()])
+                .next_u64();
+            assert_eq!(resumed_seeds, vec![expected]);
+            assert_ne!(expected, logged.seed);
+        }
     }
 
     #[test]

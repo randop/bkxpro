@@ -530,6 +530,7 @@ fn drive_upload_life(
     max_passes: u32,
 ) -> Result<bool, HarnessError> {
     let mut crashed = false;
+    let mut stall_noted = false;
     for pass in 0..max_passes {
         match session.upload_pass() {
             Ok(report) => {
@@ -542,14 +543,30 @@ fn drive_upload_life(
                     return Ok(crashed);
                 }
                 if report.pending > 0 {
-                    run.notes.push(format!(
-                        "{} segment(s) still pending after a full pass",
-                        report.pending
-                    ));
-                    break;
+                    // Transient chaos (an outage window, a lost response, a CAS
+                    // race) leaves segments pending for a pass or two; only the
+                    // budget ends the settle loop.
+                    if !stall_noted {
+                        run.notes.push(format!(
+                            "{} segment(s) still pending after a pass; retrying",
+                            report.pending
+                        ));
+                        stall_noted = true;
+                    }
+                    if pass + 1 == max_passes {
+                        run.expect(
+                            false,
+                            format!(
+                                "upload pass budget exhausted with {} segment(s) pending",
+                                report.pending
+                            ),
+                        );
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
                 }
             }
-            Err(error) => {
+            Err((report, error)) => {
+                run.record_upload_pass(&report);
                 session.note_upload_error(&error);
                 run.notes.push(format!("upload pass error: {error}"));
                 if crash_fired(session, crash) {
@@ -829,5 +846,28 @@ fn build_report(
         mock_content_digest: session.mock_opt().map_or(0, |mock| mock.content_digest()),
         replay: plan.replay_command(),
         duration_ms: started.elapsed().as_millis() as u64,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_life_records_partial_progress_from_a_failed_pass() {
+        let mut plan = crate::plan::preset("smoke", 5).unwrap();
+        plan.work.segments = 2;
+        let mut session = Session::new(&plan).unwrap();
+        write_all_sealed(&mut session, &plan).unwrap();
+        session.restart().unwrap();
+        session.mock().fence_after_put(1, 99);
+        let mut run = RunState::default();
+        assert!(!drive_upload_life(&mut session, &mut run, None, 1).unwrap());
+        assert_eq!(run.uploads.len(), 1);
+        assert_eq!(run.uploads[0].examined, 2);
+        assert_eq!(run.uploads[0].uploaded, 1);
+        assert_eq!(run.uploads[0].pending, 1);
+        assert!(run.notes.iter().any(|note| note.contains("fenced")));
+        assert!(session.uploader_poisoned());
     }
 }

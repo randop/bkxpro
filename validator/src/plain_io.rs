@@ -22,7 +22,7 @@ use std::{
     path::Path,
 };
 
-use bkxpro_segment_writer::{AcquiredSegment, SegmentIo, WriteOp};
+use bkxpro_segmenter::{AcquiredSegment, SegmentIo, WriteOp};
 
 /// Minimal [`SegmentIo`] over plain `std::fs` files, with positioned I/O so the
 /// writer's single-issuer semantics are preserved.
@@ -106,7 +106,7 @@ impl SegmentIo for PlainFileIo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bkxpro_segment_writer::AlignedBuffer;
+    use bkxpro_segmenter::AlignedBuffer;
 
     #[test]
     fn writes_reads_and_sizes_round_trip() {
